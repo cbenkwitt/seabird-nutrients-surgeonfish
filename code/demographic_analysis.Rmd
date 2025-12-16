@@ -1,0 +1,966 @@
+---
+title: "demoraphic-analysis"
+author: "CEB"
+date: '2025-12-10'
+output: html_document
+---
+
+
+
+##load packages
+```{r, warning = FALSE, message = FALSE, results = FALSE, fig.show='hide'}
+library(tidyverse) #for everything
+
+library(cowplot) #for combining plots
+
+#for bayesian modelling and interpreting:
+library(brms)
+library(tidybayes)
+library(emmeans)
+library(tidybayes)
+library(modelr)
+
+```
+
+#load data:
+```{r, warning = FALSE, message = FALSE, results = FALSE, fig.show='hide'}
+dem_dat_w_site<-read.csv("../data/dem_w_site_dat.csv")
+dem_dat_w_site
+
+
+dem_dat_w_site%>%
+  group_by(site)%>%
+  summarize(n_hsi = length(HSI),
+            n_growth = length(Growth_residuals))
+
+```
+
+#check if should log some predictors:
+```{r}
+dem_dat_w_site%>%
+  ggplot(aes(x = site, y = mean_predator_biomass))+
+  geom_point()
+#looks okay
+  
+
+dem_dat_w_site%>%
+  ggplot(aes(x = site, y = wave_energy_manual))+
+  geom_point()
+#very skewed
+
+hist(dem_dat_w_site$mean_predator_biomass)
+hist(dem_dat_w_site$wave_energy_manual)
+hist(dem_dat_w_site$mean_damsel_biomass)
+
+```
+
+
+
+###run HSI model based on DAGs for effect of N15-----
+#direct effects not working, but total effect does******
+```{r, message = FALSE}
+
+range(dem_dat_w_site$mean_predator_biomass)
+range(dem_dat_w_site$wave_energy_manual)
+range(dem_dat_w_site$mean_damsel_biomass)
+
+#center----
+dem_dat_w_site_c<-
+  dem_dat_w_site%>%
+  ungroup()%>%
+      mutate(log_HSI = log(HSI),
+             log_wave_energy_manual = log(wave_energy_manual),
+             mean_seabird_n_input_c = base::scale(mean_seabird_n_input, center = TRUE, scale = FALSE),
+       Muscle_N15_c = base::scale(Muscle_N15, center = TRUE, scale = FALSE),
+          mean_atri_biomass_c = base::scale(mean_atri_biomass, center = TRUE, scale = FALSE),
+           mean_predator_biomass_c = base::scale(mean_predator_biomass, center = TRUE, scale = FALSE),
+          mean_damsel_biomass_c = base::scale(mean_damsel_biomass, center = TRUE, scale = FALSE),
+         mean_turf_obs_adjusted_c = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = FALSE),
+         mean_structure_c =  base::scale(mean_structure, center = TRUE, scale = FALSE),
+         wave_c = base::scale(wave_energy_manual, center = TRUE, scale = FALSE),
+         log_wave_c = base::scale(log_wave_energy_manual, center = TRUE, scale = FALSE),
+       bites_per_minute_c = base::scale(bites_per_minute, center = TRUE, scale = FALSE),
+       distance_per_minute_c = base::scale(distance_per_minute, center = TRUE, scale = FALSE))
+  
+
+###total effect wtih lognormal family :
+mod_hsi_n15 <- brm(HSI  ~ Muscle_N15_c + mean_damsel_biomass_c + mean_structure_c + mean_turf_obs_adjusted_c + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_n15") #worked
+print(mod_hsi_n15)
+
+plot(mod_hsi_n15, ask = FALSE)
+pp_check(mod_hsi_n15) #looks good
+
+
+hypothesis(mod_hsi_n15, c("Muscle_N15_c>0"))  #0.91 - still good. 
+
+
+mod_hsi_n15%>%
+  spread_draws(b_Muscle_N15_c)%>%
+  median_hdi(exp(b_Muscle_N15_c))
+#1.045613	0.975953	1.115186	
+#quite close to all previous models
+1-0.975953 #0.024047
+
+#option 2:
+mod_hsi_n15_option2 <- brm(HSI  ~ Muscle_N15_c + mean_seabird_n_input_c + log_wave_c + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_n15_option2") #worked
+print(mod_hsi_n15_option2)
+
+plot(mod_hsi_n15_option2, ask = FALSE)
+pp_check(mod_hsi_n15_option2) #looks good
+
+
+hypothesis(mod_hsi_n15_option2, c("Muscle_N15_c>0"))  #0.94 - still good. 
+
+
+mod_hsi_n15_option2%>%
+  spread_draws(b_Muscle_N15_c)%>%
+  median_hdi(exp(b_Muscle_N15_c))
+#1.055931	0.9842174	1.128383		
+#quite close to previous model, if antthing slightly stronger effect here
+
+
+
+```
+
+
+
+#Total effects of all variables on HSI:-----
+```{r, message = FALSE}
+
+###Atri biomass-----
+mod_hsi_by_atri_bio <- brm(HSI  ~ mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + mean_turf_obs_adjusted_c + Muscle_N15_c + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_by_atri_bio") #worked
+print(mod_hsi_by_atri_bio)
+
+plot(mod_hsi_by_atri_bio, ask = FALSE)
+pp_check(mod_hsi_by_atri_bio) #looks good
+
+hypothesis(mod_hsi_by_atri_bio, c("mean_atri_biomass_c<0"))  #0.22
+
+mod_hsi_by_atri_bio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+#1.00492	0.9878331	1.02163	
+
+###Predators-----
+mod_hsi_by_pred <- brm(HSI  ~  mean_predator_biomass_c + mean_structure_c  + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_by_pred") #worked
+print(mod_hsi_by_pred)
+
+plot(mod_hsi_by_pred, ask = FALSE)
+pp_check(mod_hsi_by_pred) #looks good
+
+hypothesis(mod_hsi_by_pred, c("mean_predator_biomass_c<0")) #now 0.28
+
+mod_hsi_by_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+#1.004382	0.9750079	1.032562	
+
+
+###Structure-----
+mod_hsi_by_struct <- brm(HSI  ~    mean_structure_c  + log_wave_c + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_by_struct") #worked
+print(mod_hsi_by_struct)
+
+plot(mod_hsi_by_struct, ask = FALSE)
+pp_check(mod_hsi_by_struct) #looks good
+
+hypothesis(mod_hsi_by_struct, c("mean_structure_c>0"))  #.09 - so strong NEGATIVE effect of structure on hsi.
+#this is total effect - so could be because affects predators, competitors, damselfish, behavior, etc. 
+
+mod_hsi_by_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+#0.6375698	0.2567127	1.219539	0.95
+1-0.6375698 #0.3624302 reduction
+1-0.2567127 #0.7432873
+
+mod_hsi_by_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(-b_mean_structure_c))
+
+###turf cover-----
+mod_hsi_by_turf_cover<- brm(HSI  ~    mean_turf_obs_adjusted_c  + mean_damsel_biomass_c + Muscle_N15_c + mean_structure_c + (1|site),
+                data=dem_dat_w_site_c,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_by_turf_cover") #worked
+print(mod_hsi_by_turf_cover)
+
+plot(mod_hsi_by_turf_cover, ask = FALSE)
+pp_check(mod_hsi_by_turf_cover) #looks good
+
+hypothesis(mod_hsi_by_turf_cover, c("mean_turf_obs_adjusted_c>0"))  #.69 - weak
+
+mod_hsi_by_turf_cover%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+#1.006036	0.9652339	1.047076	
+
+
+###individual size-----
+dem_dat_w_site_c_size<-
+  dem_dat_w_site_c%>%
+  mutate(TL_cm_c = base::scale(TL_cm, center = TRUE, scale = FALSE))
+
+mod_hsi_by_size<- brm(HSI  ~    TL_cm_c  + (1|site),
+                data=dem_dat_w_site_c_size,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_hsi_by_size") #worked
+print(mod_hsi_by_size)
+
+plot(mod_hsi_by_size, ask = FALSE)
+pp_check(mod_hsi_by_size) #looks good
+
+hypothesis(mod_hsi_by_size, c("TL_cm_c>0"))  #0.67 - weak
+
+mod_hsi_by_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+#1.024159	0.9118168	1.148187
+
+```
+
+
+###growth residuals models: ------
+```{r}
+
+###TOTAL effect of N15:---------
+mod_growth_by_n15_option1 <- brm(Growth_residuals  ~ Muscle_N15_c + mean_damsel_biomass_c + mean_structure_c + mean_turf_obs_adjusted_c + (1|site),
+                data=dem_dat_w_site_c,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_n15_option1") #worked
+print(mod_growth_by_n15_option1)
+
+plot(mod_growth_by_n15_option1, ask = FALSE)
+pp_check(mod_growth_by_n15_option1) #looks good
+
+
+hypothesis(mod_growth_by_n15_option1, c("Muscle_N15_c>0"))  #0.3
+
+
+mod_growth_by_n15_option1%>%
+  spread_draws(b_Muscle_N15_c)%>%
+  median_hdi(b_Muscle_N15_c)
+#0.9978768	0.9892364	1.006101	
+
+
+
+###Atri biomass-----
+mod_growth_by_atri_bio <- brm(Growth_residuals  ~ mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + mean_turf_obs_adjusted_c + Muscle_N15_c +  (1|site),
+                data=dem_dat_w_site_c,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_atri_bio") #worked
+print(mod_growth_by_atri_bio)
+
+plot(mod_growth_by_atri_bio, ask = FALSE)
+pp_check(mod_growth_by_atri_bio) #looks good
+
+hypothesis(mod_growth_by_atri_bio, c("mean_atri_biomass_c<0"))  #0.16 (so trending positive but not super strong)
+
+mod_growth_by_atri_bio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(b_mean_atri_biomass_c)
+
+###Predators-----
+mod_growth_by_pred <- brm(Growth_residuals  ~  mean_predator_biomass_c + mean_structure_c  + (1|site),
+                data=dem_dat_w_site_c,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_pred") #worked
+print(mod_growth_by_pred)
+
+plot(mod_growth_by_pred, ask = FALSE)
+pp_check(mod_growth_by_pred) #looks good
+
+hypothesis(mod_growth_by_pred, c("mean_predator_biomass_c<0")) #.53 - not much happening
+
+mod_growth_by_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi((b_mean_predator_biomass_c))
+
+
+##size
+mod_growth_by_size<- brm(Growth_residuals  ~    TL_cm_c  + (1|site),
+                data=dem_dat_w_site_c_size,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_size") #worked
+print(mod_growth_by_size)
+
+plot(mod_growth_by_size, ask = FALSE)
+pp_check(mod_growth_by_size) #looks good
+
+hypothesis(mod_growth_by_size, c("TL_cm_c>0"))  #1 - strong positive effect***
+
+mod_growth_by_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi((b_TL_cm_c))
+
+
+###Structure-----
+mod_growth_by_struct <- brm(Growth_residuals  ~    mean_structure_c  + log_wave_c + (1|site),
+                data=dem_dat_w_site_c,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_struct") #worked
+print(mod_growth_by_struct)
+
+plot(mod_growth_by_struct, ask = FALSE)
+pp_check(mod_growth_by_struct) #looks good
+
+hypothesis(mod_growth_by_struct, c("mean_structure_c>0"))  #0.04 - so strong NEGATIVE effect of structure on growth (similar to HSI)
+#this is total effect - so could be because affects predators, behavior, etc. 
+
+mod_growth_by_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi((b_mean_structure_c))
+
+
+
+###turf cover-----
+mod_growth_by_turf_cover<- brm(Growth_residuals  ~    mean_turf_obs_adjusted_c  + mean_damsel_biomass_c + Muscle_N15_c + mean_structure_c + (1|site),
+                data=dem_dat_w_site_c,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mod_growth_by_turf_cover") #worked
+print(mod_growth_by_turf_cover)
+
+plot(mod_growth_by_turf_cover, ask = FALSE)
+pp_check(mod_growth_by_turf_cover) #looks good
+
+hypothesis(mod_growth_by_turf_cover, c("mean_turf_obs_adjusted_c>0"))  #.4 - weak
+
+mod_growth_by_turf_cover%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi((b_mean_turf_obs_adjusted_c))
+
+
+
+
+
+```
+
+
+###plots for total effect model - HSI-------
+```{r}
+##DAGS
+#PLOTS:
+hsi_dag_me<-conditional_effects(mod_hsi_n15, effects = "Muscle_N15_c", plot = FALSE)[[1]]
+mean(dem_dat_w_site_c$Muscle_N15) #9.258909
+
+hsi_dag_me_unscale<-
+  hsi_dag_me%>%
+  mutate(Muscle_N15 = Muscle_N15_c +9.258909)
+
+hsi_draws<-
+dem_dat_w_site_c %>%
+  data_grid(Muscle_N15_c = seq_range(Muscle_N15_c, n = 50),
+            mean_damsel_biomass_c = 0,
+            mean_turf_obs_adjusted_c = 0,
+            mean_structure_c = 0) %>%
+  add_epred_draws(mod_hsi_n15, ndraws = 500, re_formula = NA)
+
+hsi_draws_rescale<-
+  hsi_draws%>%
+  mutate(Muscle_N15 = Muscle_N15_c +9.258909)
+
+
+hsi_draw_plot<-
+dem_dat_w_site_c%>%
+  ggplot(aes(x = Muscle_N15, y = HSI))+
+  geom_line(data = hsi_draws_rescale, aes(y = .epred, x = Muscle_N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = hsi_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+  # geom_point(color = "#d0e2af", fill = "#d0e2af", size = 4, alpha = .8)+
+     geom_point(color = "#f5db99", fill = "#f5db99", size = 3, alpha = .8)+
+       xlab(expression(Surgeonfish~italic(delta)^15*N)) +
+  ylab("Condition (HSI)")+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+
+hsi_draw_plot
+
+
+
+###posterior plot:
+hsi_plot_post_dist_back<-
+ggplot() +
+     geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(mod_hsi_n15), aes(x = exp(b_Muscle_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+   scale_fill_manual(values = c("#f5db99", "lightgrey"	))+
+  theme_minimal()+
+   ylab("")+
+   xlab(expression(Multiplicative~effect~of~surgeonfish~italic(delta)^15*N~on~HSI)) +
+   ylab("")+
+ # xlim(c(-1,2))+
+   xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+hsi_plot_post_dist_back
+
+
+
+###to combine and save with growth analyses: 
+hsi_draw_plot
+hsi_plot_post_dist_back
+
+
+```
+
+
+###plots for total effect model - Growth-------
+```{r}
+##DAGS
+#PLOTS:
+growth_dag_me<-conditional_effects(mod_growth_by_n15_option1, effects = "Muscle_N15_c", plot = FALSE)[[1]]
+mean(dem_dat_w_site_c$Muscle_N15) #9.258909
+
+growth_dag_me_unscale<-
+  growth_dag_me%>%
+  mutate(Muscle_N15 = Muscle_N15_c +9.258909)
+
+growth_draws<-
+dem_dat_w_site_c %>%
+  data_grid(Muscle_N15_c = seq_range(Muscle_N15_c, n = 50),
+            mean_damsel_biomass_c = 0,
+            mean_turf_obs_adjusted_c = 0,
+            mean_structure_c = 0) %>%
+  add_epred_draws(mod_growth_by_n15_option1, ndraws = 500, re_formula = NA)
+
+growth_draws_rescale<-
+  growth_draws%>%
+  mutate(Muscle_N15 = Muscle_N15_c +9.258909)
+
+
+growth_draw_plot<-
+dem_dat_w_site_c%>%
+  ggplot(aes(x = Muscle_N15, y = Growth_residuals))+
+  geom_line(data = growth_draws_rescale, aes(y = .epred, x = Muscle_N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = growth_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+  # geom_point(color = "#d0e2af", fill = "#d0e2af", size = 4, alpha = .8)+
+     geom_point(color = "#f5db99", fill = "#f5db99", size = 3, alpha = .8)+
+       xlab(expression(Surgeonfish~italic(delta)^15*N)) +
+  ylab("Growth (residuals)")+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+
+growth_draw_plot
+
+
+
+###posterior plot:
+growth_plot_post_dist_back<-
+ggplot() +
+     geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(mod_growth_by_n15_option1), aes(x = exp(b_Muscle_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+   scale_fill_manual(values = c("#f5db99", "lightgrey"	))+
+  theme_minimal()+
+   ylab("")+
+   xlab(expression(Multiplicative~effect~of~surgeonfish~italic(delta)^15*N~on~HSI)) +
+   ylab("")+
+ # xlim(c(-1,2))+
+   xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+growth_plot_post_dist_back
+
+
+
+###to combine and save with growth analyses: 
+growth_draw_plot
+growth_plot_post_dist_back
+
+
+```
+
+###combine and save plots: 
+```{r}
+tot_hsi_plots_c<-
+  ggdraw() +
+  draw_plot(hsi_draw_plot) +
+  draw_plot(hsi_plot_post_dist_back, x = 0.6, y = .6, width = .35, height = .35)
+tot_hsi_plots_c
+
+tot_growth_plots_c<-
+  ggdraw() +
+  draw_plot(growth_draw_plot) +
+  draw_plot(growth_plot_post_dist_back, x = 0.6, y = .6, width = .35, height = .35)
+tot_growth_plots_c
+
+
+dem_plots<-plot_grid( tot_hsi_plots_c,  tot_growth_plots_c,   ncol = 2, labels = "auto")
+dem_plots
+
+
+ggsave(filename = "../outputs/figures/demographic_n15_plots.jpg", 
+       plot = dem_plots,
+       width = 20,
+      height = 8,
+       units = "cm",
+       dpi = 300)
+```
+
+
+
+
+###re-run for all predictors with centered and scaled for plotting------
+#HSI
+```{r, message = FALSE}
+
+#center AND SCALE----
+dem_dat_w_site_cs<-
+  dem_dat_w_site%>%
+  ungroup()%>%
+      mutate(log_HSI = log(HSI),
+             log_wave_energy_manual = log(wave_energy_manual),
+             log_pred = log(mean_predator_biomass + 1),
+       Muscle_N15_cs = base::scale(Muscle_N15, center = TRUE, scale = TRUE),
+          mean_atri_biomass_cs = base::scale(mean_atri_biomass, center = TRUE, scale = TRUE),
+           mean_predator_biomass_cs = base::scale(mean_predator_biomass, center = TRUE, scale = TRUE),
+          mean_damsel_biomass_cs = base::scale(mean_damsel_biomass, center = TRUE, scale = TRUE),
+         mean_turf_obs_adjusted_cs = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = TRUE),
+         mean_structure_cs =  base::scale(mean_structure, center = TRUE, scale = TRUE),
+         wave_cs = base::scale(wave_energy_manual, center = TRUE, scale = TRUE),
+         log_wave_cs = base::scale(log_wave_energy_manual, center = TRUE, scale = TRUE),
+       bites_per_minute_cs = base::scale(bites_per_minute, center = TRUE, scale = TRUE),
+       distance_per_minute_cs = base::scale(distance_per_minute, center = TRUE, scale = TRUE))
+  
+
+###TOTAL effect wtih lognormal family :
+cs_mod_hsi_n15 <- brm(HSI  ~ Muscle_N15_cs + mean_damsel_biomass_cs + mean_structure_cs + mean_turf_obs_adjusted_cs + (1|site),
+                data=dem_dat_w_site_cs,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_n15") #worked
+print(cs_mod_hsi_n15)
+
+plot(cs_mod_hsi_n15, ask = FALSE)
+pp_check(cs_mod_hsi_n15) #looks good
+
+
+hypothesis(cs_mod_hsi_n15, c("Muscle_N15_cs>0"))  #0.91 - still good. 
+
+```
+
+
+
+#Total effects of all variables on HSI:-----
+```{r, message = FALSE}
+
+#reminder of N15 effects: ------
+print(cs_mod_hsi_n15)
+
+###Atri biomass-----
+cs_mod_hsi_by_atri_bio <- brm(HSI  ~ mean_atri_biomass_cs + mean_predator_biomass_cs + mean_structure_cs + mean_turf_obs_adjusted_cs + Muscle_N15_cs + (1|site),
+                data=dem_dat_w_site_cs,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_by_atri_bio") #worked
+print(cs_mod_hsi_by_atri_bio)
+
+###Predators-----
+cs_mod_hsi_by_pred <- brm(HSI  ~  mean_predator_biomass_cs + mean_structure_cs  + (1|site),
+                data=dem_dat_w_site_cs,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_by_pred") #worked
+print(cs_mod_hsi_by_pred)
+
+###Structure-----
+cs_mod_hsi_by_struct <- brm(HSI  ~    mean_structure_cs  + log_wave_cs + (1|site),
+                data=dem_dat_w_site_cs,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_by_struct") #worked
+print(cs_mod_hsi_by_struct)
+
+
+###turf cover-----
+cs_mod_hsi_by_turf_cover<- brm(HSI  ~    mean_turf_obs_adjusted_cs  + mean_damsel_biomass_cs + Muscle_N15_cs + mean_structure_cs + (1|site),
+                data=dem_dat_w_site_cs,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_by_turf_cover") #worked
+print(cs_mod_hsi_by_turf_cover)
+
+
+###individual size-----
+dem_dat_w_site_cs_size<-
+  dem_dat_w_site_c%>%
+  mutate(TL_cm_cs = base::scale(TL_cm, center = TRUE, scale = TRUE))
+
+cs_mod_hsi_by_size<- brm(HSI  ~    TL_cm_cs  + (1|site),
+                data=dem_dat_w_site_cs_size,family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_hsi_by_size") #worked
+print(cs_mod_hsi_by_size)
+
+```
+
+
+###growth residuals models: CENTERED AND SCALED------
+```{r}
+
+###TOTAL effect of N15:---------
+cs_mod_growth_by_n15_option1 <- brm(Growth_residuals  ~ Muscle_N15_cs + mean_damsel_biomass_cs + mean_structure_cs + mean_turf_obs_adjusted_cs + (1|site),
+                data=dem_dat_w_site_cs,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_n15_option1") #worked
+print(cs_mod_growth_by_n15_option1)
+
+
+###Atri biomass-----
+cs_mod_growth_by_atri_bio <- brm(Growth_residuals  ~ mean_atri_biomass_cs + mean_predator_biomass_cs + mean_structure_cs + mean_turf_obs_adjusted_cs + Muscle_N15_cs + (1|site),
+                data=dem_dat_w_site_cs,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_atri_bio") #worked
+print(cs_mod_growth_by_atri_bio)
+
+
+###Predators-----
+cs_mod_growth_by_pred <- brm(Growth_residuals  ~  mean_predator_biomass_cs + mean_structure_cs  + (1|site),
+                data=dem_dat_w_site_cs,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_pred") #worked
+print(cs_mod_growth_by_pred)
+
+
+
+##size
+cs_mod_growth_by_size<- brm(Growth_residuals  ~    TL_cm_cs  + (1|site),
+                data=dem_dat_w_site_cs_size,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_size") #worked
+print(cs_mod_growth_by_size)
+
+
+###Structure-----
+cs_mod_growth_by_struct <- brm(Growth_residuals  ~    mean_structure_cs  + log_wave_cs + (1|site),
+                data=dem_dat_w_site_cs,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_struct") #worked
+print(cs_mod_growth_by_struct)
+
+
+
+###turf cover-----
+cs_mod_growth_by_turf_cover<- brm(Growth_residuals  ~    mean_turf_obs_adjusted_cs  + mean_damsel_biomass_cs + Muscle_N15_cs + mean_structure_cs + (1|site),
+                data=dem_dat_w_site_cs,
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/cs_mod_growth_by_turf_cover") #worked
+print(cs_mod_growth_by_turf_cover)
+
+
+
+```
+
+
+
+####re-plot centered and scaled:-----
+
+###plots for all dag effects -------####PLOT MODELS FOR OTHER PREDICTORS:------
+```{r}
+
+###combine all together: ------
+
+all_causal_plot_dem_cs<-
+ggplot() +
+      geom_vline(xintercept=0, lty=2, alpha = .5)+
+  #HSI: 
+  stat_pointinterval(data = as_draws_df(cs_mod_hsi_n15 ), aes(x = (b_Muscle_N15_cs),  y = 3.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(cs_mod_hsi_by_turf_cover), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 1.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(cs_mod_hsi_by_struct), aes(x = (b_mean_structure_cs),  y = 5.1,  color = "1Dark"),  
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(cs_mod_hsi_by_atri_bio), aes(x = (b_mean_atri_biomass_cs),  y = 4.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(cs_mod_hsi_by_pred), aes(x = (b_mean_predator_biomass_cs),  y = 6.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(cs_mod_hsi_by_size), aes(x = (b_TL_cm_cs),  y = 2.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  #growth:
+    stat_pointinterval(data = as_draws_df(cs_mod_growth_by_n15_option1 ), aes(x = (b_Muscle_N15_cs),  y = 3,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(cs_mod_growth_by_turf_cover), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 1,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(cs_mod_growth_by_struct), aes(x = (b_mean_structure_cs),  y = 5,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) +  #mod_growth_by_struct
+      stat_pointinterval(data = as_draws_df(cs_mod_growth_by_atri_bio), aes(x = (b_mean_atri_biomass_cs),  y = 4,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(cs_mod_growth_by_pred), aes(x = (b_mean_predator_biomass_cs),  y = 6,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(cs_mod_growth_by_size), aes(x = (b_TL_cm_cs),  y = 2,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+
+  
+  scale_y_continuous(breaks = c( 6, 5, 4, 3, 2, 1), labels = c( "Predator biomass", "Structural complexity", "Surgeonfish biomass",  expression(Surgeonfish~italic(delta)^15*N), "Surgeonfish size", "Turf cover"))+ #"Surgeonfish nutrients"
+  
+    scale_color_manual(values = c("1Dark" = "#c4a647", "2Light" = "#f5db99"),  name = " ", labels = c("Condition (HSI)", "Growth (residuals)"))+ 
+
+   ylab("")+
+   xlab("Effect on demographics")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        legend.position.inside = TRUE,
+        legend.position = c(.01, .01),  
+        legend.justification = c("left", "bottom"),
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=17)) #,  family="sans"
+
+all_causal_plot_dem_cs
+
+##save plot-------
+ggsave(filename = "../outputs/figures/demographics_all_causal_plots_scaled.jpg", 
+       plot = all_causal_plot_dem_cs,
+   width = 15,
+      height = 25,
+       units = "cm",
+       dpi = 300)
+
+
+```
+
+
+
+###also plot growth curve for supp:
+```{r}
+growth_mod_acan1_newdat<-readRDS(file = "../outputs/brms/growth_mod_acan1_newdat.rds")
+
+growth_mod_acan1_newdat
+
+
+acan_growth_me<- conditional_effects(growth_mod_acan1_newdat, plot = FALSE)[[1]]
+acan_growth_me
+
+acan_growth_me_unscale<-
+  acan_growth_me%>%
+  mutate(TL_cm = exp(llength),
+         exp_est = exp(estimate__),
+         exp_lwr = exp(lower__),
+         exp_upr = exp(upper__))
+
+
+vbgf_draws<-
+dem_dat_w_site_c %>%
+   data_grid(Age = seq_range(Age, n = 50)) %>%
+  add_epred_draws(growth_mod_acan1_newdat, ndraws = 500, re_formula = NA)
+vbgf_draws
+
+
+growth_curve_draw_plot<-
+dem_dat_w_site_c%>%
+  ggplot(aes(x = Age, y = TL_cm))+
+  geom_line(data = vbgf_draws, aes(y = exp(.epred), x = Age, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+     geom_line(data = acan_growth_me_unscale, aes(y = exp_est), alpha = .9, lwd = 1) +
+  # geom_point(color = "#d0e2af", fill = "#d0e2af", size = 4, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+      geom_jitter(width = .2, height = 0, color = "#f5db99", fill = "#f5db99", size = 3, alpha = .8)+
+     xlab(expression(Surgeonfish~italic(delta)^15*N)) +
+  ylab("Total length (cm)")+
+  xlab("Age (years)")+
+  scale_x_continuous(breaks  = c(2, 4, 6, 8, 10, 12))+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+
+growth_curve_draw_plot
+
+
+
+
+###save:------
+# Can save the plot with ggsave()
+ggsave(filename = "../outputs/figures/growth_curve_draw_plot.jpg",        plot = growth_curve_draw_plot,   width = 11, height = 11,  units = "cm",  dpi = 300)
+
+
+```
+
+
+
+
+##------------------seabird vs musclen15: DAG------------------ 
+```{r}
+
+acan_n15_sb_n_logwave <- brm(Muscle_N15  ~ mean_seabird_n_input_c + log_wave_c + (1|site),
+                data=dem_dat_w_site_c,
+                                family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/acan_n15_sb_n_logwave") #worked
+print(acan_n15_sb_n_logwave)
+
+hypothesis(acan_n15_sb_n_logwave, "mean_seabird_n_input_c>0") #0.91
+
+pp_check(acan_n15_sb_n_logwave)
+
+
+acan_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_c*100))#for each 100 kg/ha/yr increase, 
+#1.070932	0.9569429	1.190677	
+1-0.9569429
+#7.09%, -4.31% to 19.07%
+
+acan_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_c))
+#1.000686	0.9996224	1.001797	
+#6.86%, -3.78 to 17.97%
+1-0.9996224
+
+range(dem_dat_w_site_c$mean_seabird_n_input)
+
+###PLOT------
+sb_n15_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(acan_n15_sb_n_logwave), aes(x = exp(b_mean_seabird_n_input_c*100),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+  scale_fill_manual(values = c("#7bbcd5", "lightgrey"	))+ #e89c81
+  theme_minimal()+
+   ylab("")+
+    xlab(expression(Effect~of~seabirds~on~fish~italic(delta)^15*N)) +
+   ylab("")+
+   # scale_x_continuous(limits = c(.7,2), breaks = c(.75, 1.0, 1.25, 1.5, 1.75, 2.0))+ #make match turf - nevermind looks bad
+ # xlim(c(-1,2))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=18)) #,  family="sans"
+sb_n15_plot_post_dist
+
+  
+
+
+ggsave(filename = "../outputs/figures/sb_fishn15_plot_post_dist_exp.svg",  #.jpg
+       plot = sb_n15_plot_post_dist,
+       width = 11,
+       height = 7.5,
+       units = "cm",
+       dpi = 300)
+
+
+
+```
+
+
+##testing effect of capture period to display in supp
+```{r}
+
+library(lme4)
+library(car)
+
+dem_dat_w_site_capt<-
+  dem_dat_w_site%>%
+  mutate(Capture_period = case_when(Capture_year == 2021 & Capture_month <=8 ~"June_2021",
+                                    Capture_year == 2021 & Capture_month >9 ~"Nov_2021",
+                                    Capture_year == 2022 ~"June_2022"))
+
+gsi_lm<-lmer(GSI~Capture_period + (1|site), data = dem_dat_w_site_capt)
+summary(gsi_lm)
+Anova(gsi_lm)
+#                Chisq Df Pr(>Chisq)  
+#Capture_period 6.8039  2    0.03331 *
+
+
+hsi_lm<-lmer(HSI~Capture_period + (1|site), data = dem_dat_w_site_capt)
+summary(hsi_lm)
+Anova(hsi_lm)
+#                Chisq Df Pr(>Chisq)
+#Capture_period 0.5101  2     0.7749
+
+n15_lm<-lmer(Muscle_N15~Capture_period + (1|site), data = dem_dat_w_site_capt)
+summary(n15_lm)
+Anova(n15_lm)
+#               Chisq Df Pr(>Chisq)
+#Capture_period 0.7527  2     0.6864
+
+```
+

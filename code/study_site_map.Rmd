@@ -1,0 +1,211 @@
+---
+title: "map"
+author: "CEB"
+date: '2025-11-19'
+output: html_document
+---
+
+
+##load packages
+```{r}
+library(sf)
+library(ggspatial) #for scale bar
+
+
+library(tidyverse)
+```
+
+
+#load shape files
+```{r}
+my_sf <- read_sf("../data/FrenchPolynesia-Society-5/societe_tetiaroa_2020.shp") #from: https://dataverse.ird.fr/dataset.xhtml?persistentId=doi:10.23708/LHTEVZ
+my_sf
+
+my_sf_forereef<-
+  my_sf%>%
+  filter(L4_ATTRIB_ == "forereef")
+
+
+my_sf_rim<-
+  my_sf%>%
+  filter(L3_ATTRIB_ == "Atoll rim")
+
+
+my_sf2 <- read_sf("../data/Motu_UTM6S/Motu_UTM6S.shp") #from courtney
+#From Courtney: The projected coordinate system is WGS 1984 UTM Zone 6S (EPSG 32706). 
+st_crs(my_sf2) #looks correct
+
+my_sf2
+#hm, only has motu polygons, not th eouter rim outline. 
+
+my_sf2b<-
+ my_sf2 %>%
+   st_transform(crs = 4326)
+
+```
+
+
+##add in site/gps data:
+```{r}
+site_dat_all<- read.csv("../data/site_list_for_map.csv")
+site_dat_all
+
+
+#seperate by behavior and demographic sites-----
+behav_site_list<-
+   site_dat_all%>%
+   filter(behavior == "y")%>%
+  #jitter to avoid overlap with dem sites
+   mutate(Long_jitter = case_when(site == "Aie_south" ~ Longitude,
+                                  site == "Aie_north" ~ Longitude,
+                                  site == "Hir_Aur_hoa" ~ Longitude,
+                                  site == "Hiranae_lagoon" ~ Longitude,
+                                  site == "Reiono_east" ~ Longitude,
+                                  site == "Rimatuu_west" ~ Longitude,
+                                  TRUE~Longitude))%>%
+    mutate(Lat_jitter = case_when(site == "Aie_south" ~ Latitude-.0018,
+                                  site == "Aie_north" ~ Latitude+.0015,
+                                  site == "Hir_Aur_hoa" ~ Latitude-.0018,
+                                  site == "Hiranae_lagoon" ~ Latitude-.0018,
+                                  site == "Reiono_east" ~ Latitude+.0015,
+                                  site == "Rimatuu_west" ~ Latitude+.0015,
+                                   TRUE~Latitude))
+ 
+ 
+dem_site_list<-
+   site_dat_all%>%
+   filter(demographics == "y")
+ 
+
+```
+
+
+###combine overall site data with map:--------
+```{r}
+atri_map<-
+ggplot(my_sf2b) +
+  geom_sf(color = "black", fill = "lightgrey", alpha = .8) + #fill = DEPTH_ATTR
+  geom_sf(data = my_sf_forereef, color = "lightgrey", fill = "lightgrey", alpha = .4)+
+  annotation_scale(width_hint = .15)+
+  annotation_north_arrow(height = unit(.75, "cm"), width = unit(.75, "cm"), pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
+        geom_point(data=dem_site_list, aes(x=Longitude,y=Latitude), size = 4, alpha = .8, fill = "#ECCC7F", pch = 21)+ #F5DB99
+         geom_point(data=behav_site_list, aes(x=Long_jitter,y=Lat_jitter), size = 4, alpha = .8, fill = "#9CC7A1", pch = 24)+ #D0E2AF
+theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.position = "none")
+
+atri_map
+
+
+```
+
+
+
+###overlay seabirds:--------
+```{r}
+
+atri_map_sb<-
+ggplot(my_sf2b) +
+  geom_sf(color = "black", fill = "lightgrey", alpha = .8) + #fill = DEPTH_ATTR
+  geom_sf(data = my_sf_forereef, color = "lightgrey", fill = "lightgrey", alpha = .4)+
+  annotation_scale(width_hint = .15)+
+ annotation_north_arrow(height = unit(.75, "cm"), width = unit(.75, "cm"), pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
+        geom_point(data=dem_site_list, aes(x=Longitude,y=Latitude, fill = mean_seabird_biomass_200m), size = 4, alpha = .8, pch = 21)+ 
+         geom_point(data=behav_site_list, aes(x=Long_jitter,y=Lat_jitter, fill = mean_seabird_biomass_200m), size = 4, alpha = .8, pch = 24)+ 
+  scale_fill_distiller(palette = "YlOrRd", direction = 1, name = expression(Seabird~biomass~ (kg~ha^-1)))+
+theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.position = c(0.2,0.2))
+
+atri_map_sb
+
+
+atri_map_sb_n<-
+ggplot(my_sf2b) +
+  geom_sf(color = "black", fill = "lightgrey", alpha = .8) + #fill = DEPTH_ATTR
+  geom_sf(data = my_sf_forereef, color = "lightgrey", fill = "lightgrey", alpha = .4)+
+  annotation_scale(width_hint = .15)+
+ annotation_north_arrow(height = unit(.75, "cm"), width = unit(.75, "cm"), pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
+        geom_point(data=dem_site_list, aes(x=Longitude,y=Latitude, fill = mean_seabird_n_input_200m_kg_ha_yr), size = 4, alpha = .8, pch = 21)+ 
+         geom_point(data=behav_site_list, aes(x=Long_jitter,y=Lat_jitter, fill = mean_seabird_n_input_200m_kg_ha_yr), size = 4, alpha = .8, pch = 24)+ 
+  scale_fill_distiller(palette = "YlOrRd", direction = 1, name = expression(Seabird~N~input~ (kg~ha^-1~yr^-1)))+
+theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.position = c(0.2,0.2))
+
+atri_map_sb_n
+
+
+```
+
+
+#both together - looks best
+```{r}
+
+site_dat_all_j<-
+  site_dat_all%>%
+   mutate(Long_jitter = case_when(site == "Aie_south" ~ Longitude,
+                                  site == "Aie_north" ~ Longitude,
+                                  site == "Hir_Aur_hoa" ~ Longitude,
+                                  site == "Hiranae_lagoon" ~ Longitude,
+                                  site == "Reiono_east" ~ Longitude,
+                                  site == "Rimatuu_west" ~ Longitude,
+                                  TRUE~Longitude))%>%
+    mutate(Lat_jitter = case_when(site == "Aie_south" ~ Latitude-0.0009,
+                                  site == "Aie_north" ~ Latitude+0.00075,
+                                  site == "Hir_Aur_hoa" ~ Latitude-0.0009,
+                                  site == "Hiranae_lagoon" ~ Latitude-0.0009,
+                                  site == "Reiono_east" ~ Latitude+0.00075,
+                                  site == "Rimatuu_west" ~ Latitude+0.00075,
+                                   TRUE~Latitude))
+
+atri_map_c<-
+ggplot(my_sf2b) +
+  geom_sf(color = "black", fill = "lightgrey", alpha = .8) + #fill = DEPTH_ATTR
+  geom_sf(data = my_sf_forereef, color = "lightgrey", fill = "lightgrey", alpha = .4)+
+  annotation_scale(width_hint = .15)+
+ annotation_north_arrow(height = unit(.75, "cm"), width = unit(.75, "cm"), pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
+        geom_point(data=site_dat_all_j, aes(x=Long_jitter,y=Lat_jitter, fill = mean_seabird_n_input_200m_kg_ha_yr, color = mean_seabird_n_input_200m_kg_ha_yr), size = 8, alpha = .8, pch = 21)+ 
+             scale_fill_distiller(palette = "YlOrRd", direction = 1, name = expression(Seabird~N~input~ (kg~ha^-1~yr^-1)))+
+               scale_color_distiller(palette = "YlOrRd", direction = 1, name = expression(Seabird~N~input~ (kg~ha^-1~yr^-1)))+
+   geom_point(data=dem_site_list, aes(x=Longitude,y=Latitude, shape = "Demography"), size = 3, alpha = .5)+ #F5DB99
+         geom_point(data=behav_site_list, aes(x=Long_jitter,y=Lat_jitter, shape = "Behavior"), size = 3, alpha = .5)+ #D0E2AF
+   scale_shape_manual( name = "Sites",values = c("Behavior" = 17, "Demography" = 15)) +
+  xlab("Longitude")+
+  ylab("Latitude")+
+  guides( shape = guide_legend(order = 1),fill  = guide_colorbar(order = 2), color =  guide_colorbar(order = 2))+
+theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.position = c(0.28,0.18),
+     #   legend.direction = "horizontal",
+      legend.box = "horizontal"
+        #legend.position = "none"
+        )
+atri_map_c
+
+
+```
+
+
+
+
+###save map for supp
+```{r}
+
+ggsave(filename = "../outputs/figures/atri_map_combined.pdf", 
+       plot = atri_map_c,
+       width = 25,
+      height = 20,
+       units = "cm",
+       dpi = 300)
+
+```
+

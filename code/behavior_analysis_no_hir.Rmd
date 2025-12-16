@@ -1,0 +1,257 @@
+---
+title: "tests-without-hiranae"
+author: "CEB"
+date: '2025-11-26'
+output: html_document
+---
+
+#Hiranae is an outlier in beahviour data (much higher turf δ15N and fewer bites) so test to be sure it's not the sole driver of turf δ15N effects. *Conclusions are the same without Hiaranae - still strong effect of n15 on foraging behaviour. 
+
+
+##load packages
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+library(tidyverse) #for everything
+
+library(cowplot) #for combining plots
+
+#for bayesian modelling and interpreting:
+library(brms)
+library(tidybayes)
+library(emmeans)
+library(modelr)
+
+```
+
+
+#load data
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+behav_dat_w_site<-read.csv("../data/behav_w_site_dat.csv")
+behav_dat_w_site
+
+```
+
+
+###add in stegastes chases:
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+behav_dat_w_site<-
+behav_dat_w_site%>%
+  mutate(Stegastes_binary_chases = case_when(grepl('Stegastes', Chases_during_observation, ignore.case = TRUE)~"yes",
+                                            TRUE~"no"))%>%
+  relocate(Stegastes_binary_chases, .after = Binary_chases)%>%
+    mutate(Surgeonfish_binary_chases = case_when(grepl('Acanthurus|atri|surgeon', Chases_during_observation, ignore.case = TRUE)~"yes",
+                                            TRUE~"no"))%>%
+    relocate(Surgeonfish_binary_chases, .after = Binary_chases)
+behav_dat_w_site
+
+behav_dat_w_site%>%
+  filter(Stegastes_binary_chases=="yes") #19
+
+behav_dat_w_site%>%
+  filter(Binary_chases=="Yes") #33
+
+
+behav_dat_w_site%>%
+  filter(Surgeonfish_binary_chases=="yes") #18
+
+behav_dat_w_site%>%
+  filter(Surgeonfish_binary_chases=="yes"&Stegastes_binary_chases=="yes") #4
+
+#so 33 total fish were chased at least once, of which 19 were by stegastes, 18 were by surgeonfish, including 4 individuals chased by both.
+
+18+19-4 #33....that accounts for all chases** Looks like maybe one chase by parrotfish, but also chased by other surgeonfish so can ignore. 
+
+```
+
+
+#remove hiranae, center predictors for analyses
+```{r}
+
+##create one with just no hiranae (because outlier)------
+behav_dat_w_site_nohir<-
+  behav_dat_w_site%>%
+  filter(site != "Hiranae_lagoon")
+behav_dat_w_site_nohir
+
+
+##no hiranae centered:-------
+behav_dat_w_site_nohir_c<-
+  behav_dat_w_site_nohir%>%
+  mutate(N15_c = base::scale(N15, center = TRUE, scale = FALSE),
+          mean_atri_biomass_c = base::scale(mean_atri_biomass, center = TRUE, scale = FALSE),
+           mean_predator_biomass_c = base::scale(mean_predator_biomass, center = TRUE, scale = FALSE),
+          mean_damsel_biomass_c = base::scale(mean_damsel_biomass, center = TRUE, scale = FALSE),
+         mean_turf_obs_adjusted_c = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = FALSE),
+         mean_structure_c =  base::scale(mean_structure, center = TRUE, scale = FALSE),
+         mean_seabird_n_input_c =  base::scale(mean_seabird_n_input, center = TRUE, scale = FALSE),
+         wave_c = base::scale(wave_energy_manual, center = TRUE, scale = FALSE),
+         time_hours_c = base::scale(time_hours, center = TRUE, scale = FALSE),
+         log_wave = log(wave_energy_manual),
+         log_wave_c = base::scale(log_wave, center = TRUE, scale = FALSE))%>%
+  mutate(log_total_bites_per_minute = log(total_bites_per_minute))
+
+  
+```
+
+
+
+###----------------dag-based analyses----------------
+
+#effect of n15 on total bites per minute: -----
+```{r}
+
+###Run models --------
+total_bites_n15_mod_site_loglink_no_hir <-
+  brm(total_bites_per_minute ~ N15_c + mean_turf_obs_adjusted_c + mean_damsel_biomass_c + mean_structure_c +  (1|site),
+                data=behav_dat_w_site_nohir_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_n15_mod_site_loglink_no_hir") 
+print(total_bites_n15_mod_site_loglink_no_hir)
+
+plot(total_bites_n15_mod_site_loglink_no_hir, ask = FALSE)
+pp_check(total_bites_n15_mod_site_loglink_no_hir)
+#looks good
+
+hypothesis(total_bites_n15_mod_site_loglink_no_hir, "N15_c<0") #0.97 - so still strong negative effect**
+
+total_bites_n15_mod_site_loglink_no_hir%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.8025176	0.6951502	0.9119502		- with hiranae 
+#0.8783516	0.7679932	0.9983723	 - no hiranae,  similar effect
+
+```
+
+
+
+####repeat with all other behavior variables-----------
+```{r}
+#use: sum_distance_between_forays_per_minute  - this is the total distance travelled between forays, but scaled per minute so time doesn't matter.
+#goes to 0....so add 1
+
+##add log column to dataframes:
+behav_dat_w_site_c_dist_nohir<-
+  behav_dat_w_site_nohir_c%>%
+  mutate(sum_dist_foray_min_plus1 = sum_distance_between_forays_per_minute+1,
+         mean_dist_foray_min_plus1 = mean_distance_between_forays+1,
+         distance_end_start = as.numeric(Distance_end_start_m_formatted),
+        distance_end_start_plus1 = distance_end_start+1 )
+
+```
+
+
+###effect of n15 on total sumdist per minute ------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT--------
+total_sumdist_n15_mod_site_no_hir <-
+  brm(sum_dist_foray_min_plus1 ~ N15_c + mean_turf_obs_adjusted_c + mean_damsel_biomass_c + mean_structure_c +  (1|site),
+                data=behav_dat_w_site_c_dist_nohir, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_n15_mod_site_no_hir") 
+print(total_sumdist_n15_mod_site_no_hir)
+
+plot(total_sumdist_n15_mod_site_no_hir, ask = FALSE)
+pp_check(total_sumdist_n15_mod_site_no_hir)
+#looks good
+
+hypothesis(total_sumdist_n15_mod_site_no_hir, "N15_c<0") #0.97 - so still strong negative effect**
+
+total_sumdist_n15_mod_site_no_hir%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.8949325	0.8153735	0.9763919	-with hir
+#0.9125441	0.8233833	1.000298	-no hir - similar effect
+
+```
+
+
+###run analysis - effect of n15 on mean distance per foray------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT--------
+total_meandist_n15_mod_site_loglink_nohir <-
+  brm(mean_dist_foray_min_plus1 ~ N15_c + mean_turf_obs_adjusted_c + mean_damsel_biomass_c + mean_structure_c +  (1|site),
+                data=behav_dat_w_site_c_dist_nohir, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_n15_mod_site_loglink_nohir") 
+print(total_meandist_n15_mod_site_loglink_nohir)
+
+plot(total_meandist_n15_mod_site_loglink_nohir, ask = FALSE)
+pp_check(total_meandist_n15_mod_site_loglink_nohir)
+#looks good
+
+hypothesis(total_meandist_n15_mod_site_loglink_nohir, "N15_c<0") #0.4 - so still no real effect
+
+total_meandist_n15_mod_site_loglink_nohir%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#1.00 [0.91,1.09] - with hir
+#1.01	[0.91	1.11] - no hir, again similar
+
+```
+
+
+
+##n15 effects on feeding bouts per minute
+```{r, message=FALSE}
+
+#NEED TO SCALE BY MINUTE*****
+behav_dat_w_site_c_dist_foray_nohir<-
+  behav_dat_w_site_c_dist_nohir%>%
+  mutate(forays_per_minute = number_forays/(total_time_seconds_numeric/60))
+
+###Run models--------
+total_forays_n15_mod_site_loglink_nohir <-
+  brm(forays_per_minute ~ N15_c + mean_turf_obs_adjusted_c + mean_damsel_biomass_c + mean_structure_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray_nohir, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_n15_mod_site_loglink_nohir") #worked
+print(total_forays_n15_mod_site_loglink_nohir)
+
+plot(total_forays_n15_mod_site_loglink_nohir, ask = FALSE)
+pp_check(total_forays_n15_mod_site_loglink_nohir)
+#looks good
+
+hypothesis(total_forays_n15_mod_site_loglink_nohir, "N15_c<0") #0.96 - still strong effect
+
+total_forays_n15_mod_site_loglink_nohir%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.88 [0.80,0.96] - wiht hir
+#0.91	[0.82,1.01]	 - no hir, again similar
+
+```
+
+
+
+##n15 effects on mean_bites_per_foray
+```{r, message=FALSE}
+
+###Run models--------
+total_foraybites_n15_mod_site_loglink_nohir <-
+  brm(mean_bites_per_foray ~ N15_c + mean_turf_obs_adjusted_c + mean_damsel_biomass_c + mean_structure_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray_nohir, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_n15_mod_site_loglink_nohir") 
+print(total_foraybites_n15_mod_site_loglink_nohir)
+
+plot(total_foraybites_n15_mod_site_loglink_nohir, ask = FALSE)
+pp_check(total_foraybites_n15_mod_site_loglink_nohir)
+#looks good
+
+hypothesis(total_foraybites_n15_mod_site_loglink_nohir, "N15_c<0") #.78 - weaker effect here than with hir, but trending same direction.
+
+total_foraybites_n15_mod_site_loglink_nohir%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.88 [0.80,0.97] - with hir
+#0.96 [0.87,	1.06] - no hir	
+
+```
+
+
