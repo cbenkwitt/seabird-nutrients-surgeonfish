@@ -1,0 +1,2408 @@
+---
+title: "behavior-anlaysis"
+author: "CEB"
+date: '2025-11-26'
+output: html_document
+---
+
+
+##load packages
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+library(tidyverse) #for everything
+
+library(cowplot) #for combining plots
+
+#for bayesian modelling and interpreting:
+library(brms)
+library(tidybayes)
+library(emmeans)
+library(modelr)
+
+```
+
+
+#load data
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+behav_dat_w_site<-read.csv("../data/behav_w_site_dat.csv")
+behav_dat_w_site
+
+```
+
+
+###add in stegastes chases:
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+behav_dat_w_site<-
+behav_dat_w_site%>%
+  mutate(Stegastes_binary_chases = case_when(grepl('Stegastes', Chases_during_observation, ignore.case = TRUE)~"yes",
+                                            TRUE~"no"))%>%
+  relocate(Stegastes_binary_chases, .after = Binary_chases)%>%
+    mutate(Surgeonfish_binary_chases = case_when(grepl('Acanthurus|atri|surgeon', Chases_during_observation, ignore.case = TRUE)~"yes",
+                                            TRUE~"no"))%>%
+    relocate(Surgeonfish_binary_chases, .after = Binary_chases)
+behav_dat_w_site
+
+behav_dat_w_site%>%
+  filter(Stegastes_binary_chases=="yes") #19
+
+behav_dat_w_site%>%
+  filter(Binary_chases=="Yes") #33
+
+
+behav_dat_w_site%>%
+  filter(Surgeonfish_binary_chases=="yes") #18
+
+behav_dat_w_site%>%
+  filter(Surgeonfish_binary_chases=="yes"&Stegastes_binary_chases=="yes") #4
+
+#so 33 total fish were chased at least once, of which 19 were by stegastes, 18 were by surgeonfish, including 4 individuals chased by both.
+
+18+19-4 #33....that accounts for all chases** Looks like maybe one chase by parrotfish, but also chased by other surgeonfish so can ignore. 
+
+```
+
+
+#check sample sizes by site, center predictors for analyses
+```{r}
+behav_dat_w_site%>%
+  group_by(site)%>%
+  summarize(n_site = length(total_bites_per_minute))
+
+
+behav_dat_w_site_c<-
+  behav_dat_w_site%>%
+  mutate(N15_c = base::scale(N15, center = TRUE, scale = FALSE),
+          mean_atri_biomass_c = base::scale(mean_atri_biomass, center = TRUE, scale = FALSE),
+           mean_predator_biomass_c = base::scale(mean_predator_biomass, center = TRUE, scale = FALSE),
+          mean_damsel_biomass_c = base::scale(mean_damsel_biomass, center = TRUE, scale = FALSE),
+         mean_turf_obs_adjusted_c = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = FALSE),
+         mean_structure_c =  base::scale(mean_structure, center = TRUE, scale = FALSE),
+         mean_seabird_n_input_c =  base::scale(mean_seabird_n_input, center = TRUE, scale = FALSE),
+         wave_c = base::scale(wave_energy_manual, center = TRUE, scale = FALSE),
+         time_hours_c = base::scale(time_hours, center = TRUE, scale = FALSE),
+         log_wave = log(wave_energy_manual),
+         log_wave_c = base::scale(log_wave, center = TRUE, scale = FALSE))%>%
+  mutate(log_total_bites_per_minute = log(total_bites_per_minute))
+
+  
+```
+
+###----------------dag-based analyses----------------
+
+
+#effect of n15 on total bites per minute: -----
+```{r, warning = FALSE, message = FALSE, results = FALSE, fig.show='hide'}
+
+#two possible adjustment sets: 
+
+###Run models TOTAL EFFECT--------
+##only option - updated DAG----
+total_bites_n15_mod_site_loglink_option3 <-
+  brm(total_bites_per_minute ~ N15_c   + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_n15_mod_site_loglink_option3") #worked
+print(total_bites_n15_mod_site_loglink_option3)
+
+plot(total_bites_n15_mod_site_loglink_option3, ask = FALSE)
+pp_check(total_bites_n15_mod_site_loglink_option3)
+#looks good
+
+hypothesis(total_bites_n15_mod_site_loglink_option3, "N15_c<0") #1 - so still strong negative effect**
+
+total_bites_n15_mod_site_loglink_option3%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.8049985	0.7054017	0.9061607		- nearly identical to above
+
+1-0.8049985 #0.1950015
+1-0.7054017 #0.2945983
+1-0.9061607 #0.0938393
+
+```
+
+
+###compare to other potential causes of behavior: 
+```{r}
+
+#####Aggressive encounters----------------
+total_and_direct_bites_mod_site_loglink_aggression <-
+  brm(total_bites_per_minute ~ Binary_chases + mean_atri_biomass_c + mean_damsel_biomass_c  +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_bites_mod_site_loglink_aggression") #worked
+print(total_and_direct_bites_mod_site_loglink_aggression)
+
+plot(total_and_direct_bites_mod_site_loglink_aggression, ask = FALSE)
+pp_check(total_and_direct_bites_mod_site_loglink_aggression)
+#looks good
+
+hypothesis(total_and_direct_bites_mod_site_loglink_aggression, "Binary_chasesYes<0") #0.32 - no effect
+
+total_and_direct_bites_mod_site_loglink_aggression%>%
+  spread_draws(b_Binary_chasesYes)%>%
+  median_hdi(exp(b_Binary_chasesYes))
+#1.07507	0.7861949	1.426391	
+
+
+
+#####A tri biomass----------------
+total_bites_mod_site_loglink_atribio <-
+  brm(total_bites_per_minute ~ mean_atri_biomass_c +  N15_c + mean_predator_biomass_c + mean_structure_c  + mean_turf_obs_adjusted_c +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_atribio") #2 divergent
+print(total_bites_mod_site_loglink_atribio)
+
+plot(total_bites_mod_site_loglink_atribio, ask = FALSE)
+pp_check(total_bites_mod_site_loglink_atribio)
+#looks good
+
+hypothesis(total_bites_mod_site_loglink_atribio, "mean_atri_biomass_c>0") #0.58 - no real effect
+
+total_bites_mod_site_loglink_atribio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+#1.003175	0.9482985	1.057293	
+
+
+####Damselfish----------------
+total_bites_mod_site_loglink_damsel <-
+  brm(total_bites_per_minute ~ mean_damsel_biomass_c + mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_damsel") #worked
+print(total_bites_mod_site_loglink_damsel)
+
+plot(total_bites_mod_site_loglink_damsel, ask = FALSE)
+pp_check(total_bites_mod_site_loglink_damsel)
+#looks good
+
+hypothesis(total_bites_mod_site_loglink_damsel, "mean_damsel_biomass_c<0") #0..51 - no effect
+
+total_bites_mod_site_loglink_damsel%>%
+  spread_draws(b_mean_damsel_biomass_c)%>%
+  median_hdi(exp(b_mean_damsel_biomass_c))
+#0.999873	0.9859193	1.014542	
+
+
+####---------Predators---------
+total_bites_mod_site_loglink_pred <-
+  brm(total_bites_per_minute ~ mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_pred") #worked
+print(total_bites_mod_site_loglink_pred)
+
+plot(total_bites_mod_site_loglink_pred, ask = FALSE)
+pp_check(total_bites_mod_site_loglink_pred)
+#looks good
+
+hypothesis(total_bites_mod_site_loglink_pred, "mean_predator_biomass_c<0") #0.03 - SO POSITIVE EFFECT OF PREDATOR BIOMASS ON BITE RATE***
+
+total_bites_mod_site_loglink_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+#1.035049	0.9962155	1.071328	
+
+
+
+####---------Structure---------
+total_bites_mod_site_loglink_struct <-
+  brm(total_bites_per_minute ~ mean_structure_c  + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_struct") #worked
+print(total_bites_mod_site_loglink_struct)
+
+plot(total_bites_mod_site_loglink_struct, ask = FALSE)
+pp_check(total_bites_mod_site_loglink_struct)
+#looks good
+
+hypothesis(total_bites_mod_site_loglink_struct, "mean_structure_c<0") #.3
+
+total_bites_mod_site_loglink_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+#	1.305715	0.1553781	3.563813	
+
+
+
+
+####---------Time of day---------
+total_direct_bites_mod_site_loglink_time <-
+  brm(total_bites_per_minute ~ time_hours_c   +  (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_bites_mod_site_loglink_time") #worked
+print(total_direct_bites_mod_site_loglink_time)
+
+plot(total_direct_bites_mod_site_loglink_time, ask = FALSE)
+pp_check(total_direct_bites_mod_site_loglink_time)
+#looks good
+
+hypothesis(total_direct_bites_mod_site_loglink_time, "time_hours_c<0") #0.38
+
+total_direct_bites_mod_site_loglink_time%>%
+  spread_draws(b_time_hours_c)%>%
+  median_hdi(exp(b_time_hours_c))
+#	1.026659	0.8741239	1.192952
+
+
+
+
+####---------Turf cover---------
+total_bites_mod_site_loglink_turf <-
+  brm(total_bites_per_minute ~ mean_turf_obs_adjusted_c   +  mean_damsel_biomass_c  + N15_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_turf") #worked
+print(total_bites_mod_site_loglink_turf)
+
+plot(total_bites_mod_site_loglink_turf, ask = FALSE)
+pp_check(total_bites_mod_site_loglink_turf)
+#looks good
+
+hypothesis(total_bites_mod_site_loglink_turf, "mean_turf_obs_adjusted_c<0") #.49
+
+total_bites_mod_site_loglink_turf%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+#1.000462	0.9455902	1.062569	
+
+
+
+####---------individual size---------
+behav_dat_w_site_c_size<-
+  behav_dat_w_site_c%>%
+   mutate(TL_cm_c = base::scale(Size, center = TRUE, scale = FALSE))
+
+
+total_bites_mod_site_loglink_size <-
+  brm(total_bites_per_minute ~ TL_cm_c + (1|site),
+                data=behav_dat_w_site_c_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_size") #worked
+print(total_bites_mod_site_loglink_size)
+
+hypothesis(total_bites_mod_site_loglink_size, "TL_cm_c>0") #0.96
+
+total_bites_mod_site_loglink_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+#1.087735	0.9820163	1.18776	
+
+
+```
+
+
+####repeat with all other behavior variables-----------
+```{r}
+#use: sum_distance_between_forays_per_minute  - this is the total distance travelled between forays, but scaled per minute so time doesn't matter.
+#goes to 0....so add 1
+
+##add log column to dataframes:
+behav_dat_w_site_c_dist<-
+  behav_dat_w_site_c%>%
+  mutate(sum_dist_foray_min_plus1 = sum_distance_between_forays_per_minute+1,
+         mean_dist_foray_min_plus1 = mean_distance_between_forays+1,
+         distance_end_start = as.numeric(Distance_end_start_m_formatted),
+        distance_end_start_plus1 = distance_end_start+1 )
+
+```
+
+
+
+###effect of n15 on total sumdist per minute ------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT--------
+##only option - updated DAG----
+total_sumdist_n15_mod_site_loglink_option3 <-
+  brm(sum_dist_foray_min_plus1 ~ N15_c + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_n15_mod_site_loglink_option3") #worked
+print(total_sumdist_n15_mod_site_loglink_option3)
+
+plot(total_sumdist_n15_mod_site_loglink_option3, ask = FALSE)
+pp_check(total_sumdist_n15_mod_site_loglink_option3)
+#looks good
+
+hypothesis(total_sumdist_n15_mod_site_loglink_option3, "N15_c<0") #.99 - so still strong negative effect**
+
+total_sumdist_n15_mod_site_loglink_option3%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.8963969	0.8156484	0.9803205	
+
+1-0.8920339 #0.1079661
+1-0.8115217 #0.1884783
+1-0.9721629 #0.0278371
+
+```
+
+
+###compare to other potential causes of behavior: 
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_sumdist_mod_site_loglink_aggression <-
+  brm(sum_dist_foray_min_plus1 ~ Binary_chases + mean_atri_biomass_c + mean_damsel_biomass_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_sumdist_mod_site_loglink_aggression") #worked
+print(total_and_direct_sumdist_mod_site_loglink_aggression)
+
+plot(total_and_direct_sumdist_mod_site_loglink_aggression, ask = FALSE)
+pp_check(total_and_direct_sumdist_mod_site_loglink_aggression)
+#looks good
+
+hypothesis(total_and_direct_sumdist_mod_site_loglink_aggression, "Binary_chasesYes<0") 
+
+total_and_direct_sumdist_mod_site_loglink_aggression%>%
+  spread_draws(b_Binary_chasesYes)%>%
+  median_hdi(exp(b_Binary_chasesYes))
+
+
+
+#####A tri biomass----------------
+total_sumdist_mod_site_loglink_atribio <-
+  brm(sum_dist_foray_min_plus1 ~ mean_atri_biomass_c +  N15_c + mean_predator_biomass_c + mean_structure_c  + mean_turf_obs_adjusted_c +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_atribio") #2 divergent
+print(total_sumdist_mod_site_loglink_atribio)
+
+plot(total_sumdist_mod_site_loglink_atribio, ask = FALSE)
+pp_check(total_sumdist_mod_site_loglink_atribio)
+#looks good
+
+hypothesis(total_sumdist_mod_site_loglink_atribio, "mean_atri_biomass_c<0") 
+
+total_sumdist_mod_site_loglink_atribio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdci(exp(b_mean_atri_biomass_c))
+
+
+
+####Damselfish----------------
+total_sumdist_mod_site_loglink_damsel <-
+  brm(sum_dist_foray_min_plus1 ~ mean_damsel_biomass_c + mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_damsel") #worked
+print(total_sumdist_mod_site_loglink_damsel)
+
+plot(total_sumdist_mod_site_loglink_damsel, ask = FALSE)
+pp_check(total_sumdist_mod_site_loglink_damsel)
+#looks good
+
+hypothesis(total_sumdist_mod_site_loglink_damsel, "mean_damsel_biomass_c<0")  
+
+total_sumdist_mod_site_loglink_damsel%>%
+  spread_draws(b_mean_damsel_biomass_c)%>%
+  median_hdi(exp(b_mean_damsel_biomass_c))
+
+
+
+####---------Predators---------
+total_sumdist_mod_site_loglink_pred <-
+  brm(sum_dist_foray_min_plus1 ~ mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_pred") #worked
+print(total_sumdist_mod_site_loglink_pred)
+
+plot(total_sumdist_mod_site_loglink_pred, ask = FALSE)
+pp_check(total_sumdist_mod_site_loglink_pred)
+#looks good
+
+hypothesis(total_sumdist_mod_site_loglink_pred, "mean_predator_biomass_c<0") #0.09 - SO POSITIVE EFFECT OF PREDATOR BIOMASS ON DISTANCE TRAVELLED
+#travelling MORE distance with more predators. 
+
+total_sumdist_mod_site_loglink_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+
+
+
+####---------Structure---------
+total_sumdist_mod_site_loglink_struct <-
+  brm(sum_dist_foray_min_plus1 ~ mean_structure_c  + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_struct") #
+print(total_sumdist_mod_site_loglink_struct)
+
+plot(total_sumdist_mod_site_loglink_struct, ask = FALSE)
+pp_check(total_sumdist_mod_site_loglink_struct)
+#looks good
+
+hypothesis(total_sumdist_mod_site_loglink_struct, "mean_structure_c<0") #0.29
+
+total_sumdist_mod_site_loglink_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+
+
+
+
+####---------Time of day---------
+total_direct_sumdist_mod_site_loglink_time <-
+  brm(sum_dist_foray_min_plus1 ~ time_hours_c   +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_sumdist_mod_site_loglink_time") #worked
+print(total_direct_sumdist_mod_site_loglink_time)
+
+plot(total_direct_sumdist_mod_site_loglink_time, ask = FALSE)
+pp_check(total_direct_sumdist_mod_site_loglink_time)
+#looks good
+
+hypothesis(total_direct_sumdist_mod_site_loglink_time, "time_hours_c<0") #0.76
+
+total_direct_sumdist_mod_site_loglink_time%>%
+  spread_draws(b_time_hours_c)%>%
+  median_hdi(exp(b_time_hours_c))
+
+
+
+
+####---------Turf cover---------
+total_sumdist_mod_site_loglink_turf <-
+  brm(sum_dist_foray_min_plus1 ~ mean_turf_obs_adjusted_c   +  mean_damsel_biomass_c  + N15_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_turf") #worked
+print(total_sumdist_mod_site_loglink_turf)
+
+plot(total_sumdist_mod_site_loglink_turf, ask = FALSE)
+pp_check(total_sumdist_mod_site_loglink_turf)
+#looks good
+
+hypothesis(total_sumdist_mod_site_loglink_turf, "mean_turf_obs_adjusted_c<0") #0.58
+
+total_sumdist_mod_site_loglink_turf%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+#0.997109	0.961206	1.042732	
+
+
+
+####---------individual size---------
+behav_dat_w_site_c_dist_size<-
+  behav_dat_w_site_c_dist%>%
+   mutate(TL_cm_c = base::scale(Size, center = TRUE, scale = FALSE))
+
+
+total_sumdist_mod_site_loglink_size <-
+  brm(sum_dist_foray_min_plus1 ~ TL_cm_c + (1|site),
+                data=behav_dat_w_site_c_dist_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_size") #worked
+print(total_sumdist_mod_site_loglink_size)
+
+hypothesis(total_sumdist_mod_site_loglink_size, "TL_cm_c>0") #0.45
+
+total_sumdist_mod_site_loglink_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+
+```
+
+
+
+###run analysis - effect of n15 on mean distance per foray------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT-------
+###NEW DAG - ONLY OPTION--------
+total_meandist_n15_mod_site_loglink_option3 <-
+  brm(mean_dist_foray_min_plus1 ~ N15_c + log_wave_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_n15_mod_site_loglink_option3") #worked
+print(total_meandist_n15_mod_site_loglink_option3)
+
+plot(total_meandist_n15_mod_site_loglink_option3, ask = FALSE)
+pp_check(total_meandist_n15_mod_site_loglink_option3)
+#looks good
+
+hypothesis(total_meandist_n15_mod_site_loglink_option3, "N15_c<0") #0.52
+
+total_meandist_n15_mod_site_loglink_option3%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.9975394	0.9084294	1.09054	
+
+1-0.9975394 #0.0101571
+1-0.9084294 # 0.0999606
+1-1.09054 #-0.080559
+
+```
+
+
+
+
+###compare to other potential causes of behavior: Mean dist
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_meandist_mod_site_loglink_aggression <-
+  brm(mean_dist_foray_min_plus1 ~ Binary_chases + mean_atri_biomass_c + mean_damsel_biomass_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_meandist_mod_site_loglink_aggression") #worked
+print(total_and_direct_meandist_mod_site_loglink_aggression)
+
+plot(total_and_direct_meandist_mod_site_loglink_aggression, ask = FALSE)
+pp_check(total_and_direct_meandist_mod_site_loglink_aggression)
+#looks good
+
+hypothesis(total_and_direct_meandist_mod_site_loglink_aggression, "Binary_chasesYes<0")
+
+total_and_direct_meandist_mod_site_loglink_aggression%>%
+  spread_draws(b_Binary_chasesYes)%>%
+  median_hdi(exp(b_Binary_chasesYes))
+
+
+
+#####A tri biomass----------------
+total_meandist_mod_site_loglink_atribio <-
+  brm(mean_dist_foray_min_plus1 ~ mean_atri_biomass_c +  N15_c + mean_predator_biomass_c + mean_structure_c  + mean_turf_obs_adjusted_c +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_atribio") 
+print(total_meandist_mod_site_loglink_atribio)
+
+plot(total_meandist_mod_site_loglink_atribio, ask = FALSE)
+pp_check(total_meandist_mod_site_loglink_atribio)
+#looks good
+
+hypothesis(total_meandist_mod_site_loglink_atribio, "mean_atri_biomass_c<0") 
+
+total_meandist_mod_site_loglink_atribio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+
+
+
+####Damselfish----------------
+total_meandist_mod_site_loglink_damsel <-
+  brm(mean_dist_foray_min_plus1 ~ mean_damsel_biomass_c + mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_damsel") #worked
+print(total_meandist_mod_site_loglink_damsel)
+
+plot(total_meandist_mod_site_loglink_damsel, ask = FALSE)
+pp_check(total_meandist_mod_site_loglink_damsel)
+#looks good
+
+hypothesis(total_meandist_mod_site_loglink_damsel, "mean_damsel_biomass_c<0") 
+
+total_meandist_mod_site_loglink_damsel%>%
+  spread_draws(b_mean_damsel_biomass_c)%>%
+  median_hdi(exp(b_mean_damsel_biomass_c))
+
+
+
+####---------Predators---------
+total_meandist_mod_site_loglink_pred <-
+  brm(mean_dist_foray_min_plus1 ~ mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_pred") #worked
+print(total_meandist_mod_site_loglink_pred)
+
+plot(total_meandist_mod_site_loglink_pred, ask = FALSE)
+pp_check(total_meandist_mod_site_loglink_pred)
+#looks good
+
+hypothesis(total_meandist_mod_site_loglink_pred, "mean_predator_biomass_c<0") 
+
+total_meandist_mod_site_loglink_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+
+
+####---------Structure---------
+total_meandist_mod_site_loglink_struct <-
+  brm(mean_dist_foray_min_plus1 ~ mean_structure_c  + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_struct") #worked
+print(total_meandist_mod_site_loglink_struct)
+
+plot(total_meandist_mod_site_loglink_struct, ask = FALSE)
+pp_check(total_meandist_mod_site_loglink_struct)
+#looks good
+
+hypothesis(total_meandist_mod_site_loglink_struct, "mean_structure_c<0") 
+
+total_meandist_mod_site_loglink_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+
+
+
+
+####---------Time of day---------
+total_direct_meandist_mod_site_loglink_time <-
+  brm(mean_dist_foray_min_plus1 ~ time_hours_c   +  (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_meandist_mod_site_loglink_time") #worked
+print(total_direct_meandist_mod_site_loglink_time)
+
+plot(total_direct_meandist_mod_site_loglink_time, ask = FALSE)
+pp_check(total_direct_meandist_mod_site_loglink_time)
+#looks good
+
+hypothesis(total_direct_meandist_mod_site_loglink_time, "time_hours_c<0") 
+
+total_direct_meandist_mod_site_loglink_time%>%
+  spread_draws(b_time_hours_c)%>%
+  median_hdi(exp(b_time_hours_c))
+
+
+
+####---------Turf cover---------
+total_meandist_mod_site_loglink_turf <-
+  brm(mean_dist_foray_min_plus1 ~ mean_turf_obs_adjusted_c   +  mean_damsel_biomass_c  + N15_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_turf") #worked
+print(total_meandist_mod_site_loglink_turf)
+
+plot(total_meandist_mod_site_loglink_turf, ask = FALSE)
+pp_check(total_meandist_mod_site_loglink_turf)
+#looks good
+
+hypothesis(total_meandist_mod_site_loglink_turf, "mean_turf_obs_adjusted_c<0") 
+
+total_meandist_mod_site_loglink_turf%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+
+
+####---------individual size---------
+
+total_meandist_mod_site_loglink_size <-
+  brm(mean_dist_foray_min_plus1 ~ TL_cm_c + (1|site),
+                data=behav_dat_w_site_c_dist_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_size") #worked
+print(total_meandist_mod_site_loglink_size)
+
+hypothesis(total_meandist_mod_site_loglink_size, "TL_cm_c>0") #
+
+total_meandist_mod_site_loglink_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+
+```
+
+
+
+###------number of feeding bouts------
+
+##n15 effects on feeding bouts per minute
+```{r, message=FALSE}
+
+#NEED TO SCALE BY MINUTE*****
+behav_dat_w_site_c_dist_foray<-
+  behav_dat_w_site_c_dist%>%
+  mutate(forays_per_minute = number_forays/(total_time_seconds_numeric/60))
+
+###Run models--------
+###NEW DAG - NEED TO USE THIS-----------
+total_forays_n15_mod_site_loglink_option3 <-
+  brm(forays_per_minute ~ N15_c + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_n15_mod_site_loglink_option3") #worked
+print(total_forays_n15_mod_site_loglink_option3)
+
+plot(total_forays_n15_mod_site_loglink_option3, ask = FALSE)
+pp_check(total_forays_n15_mod_site_loglink_option3)
+#looks good
+
+hypothesis(total_forays_n15_mod_site_loglink_option3, "N15_c<0") #1
+
+total_forays_n15_mod_site_loglink_option3%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.8722802	0.791626	0.9531124	
+
+1-0.8722802 # 0.1277198
+1-0.791626 # 0.208374
+1-0.9531124 #0.0468876
+
+```
+
+
+
+###compare to other potential causes of behavior: # of forays
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_forays_mod_site_loglink_aggression <-
+  brm(forays_per_minute ~ Binary_chases + mean_atri_biomass_c + mean_damsel_biomass_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_forays_mod_site_loglink_aggression") #worked
+print(total_and_direct_forays_mod_site_loglink_aggression)
+
+plot(total_and_direct_forays_mod_site_loglink_aggression, ask = FALSE)
+pp_check(total_and_direct_forays_mod_site_loglink_aggression)
+#looks good
+
+hypothesis(total_and_direct_forays_mod_site_loglink_aggression, "Binary_chasesYes<0") 
+
+total_and_direct_forays_mod_site_loglink_aggression%>%
+  spread_draws(b_Binary_chasesYes)%>%
+  median_hdi(exp(b_Binary_chasesYes))
+
+
+
+#####A tri biomass----------------
+total_forays_mod_site_loglink_atribio <-
+  brm(forays_per_minute ~ mean_atri_biomass_c +  N15_c + mean_predator_biomass_c + mean_structure_c  + mean_turf_obs_adjusted_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_atribio") #2 divergent
+print(total_forays_mod_site_loglink_atribio)
+
+plot(total_forays_mod_site_loglink_atribio, ask = FALSE)
+pp_check(total_forays_mod_site_loglink_atribio)
+#looks good
+
+hypothesis(total_forays_mod_site_loglink_atribio, "mean_atri_biomass_c<0") 
+
+total_forays_mod_site_loglink_atribio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+
+
+####Damselfish----------------
+total_forays_mod_site_loglink_damsel <-
+  brm(forays_per_minute ~ mean_damsel_biomass_c + mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_damsel") #worked
+print(total_forays_mod_site_loglink_damsel)
+
+plot(total_forays_mod_site_loglink_damsel, ask = FALSE)
+pp_check(total_forays_mod_site_loglink_damsel)
+#looks good
+
+hypothesis(total_forays_mod_site_loglink_damsel, "mean_damsel_biomass_c<0") 
+
+total_forays_mod_site_loglink_damsel%>%
+  spread_draws(b_mean_damsel_biomass_c)%>%
+  median_hdi(exp(b_mean_damsel_biomass_c))
+
+
+
+####---------Predators---------
+total_forays_mod_site_loglink_pred <-
+  brm(forays_per_minute ~ mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_pred") #worked
+print(total_forays_mod_site_loglink_pred)
+
+plot(total_forays_mod_site_loglink_pred, ask = FALSE)
+pp_check(total_forays_mod_site_loglink_pred)
+#looks good
+
+hypothesis(total_forays_mod_site_loglink_pred, "mean_predator_biomass_c<0") 
+
+total_forays_mod_site_loglink_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+
+
+
+####---------Structure---------
+total_forays_mod_site_loglink_struct <-
+  brm(forays_per_minute ~ mean_structure_c  + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_struct") #worked
+print(total_forays_mod_site_loglink_struct)
+
+plot(total_forays_mod_site_loglink_struct, ask = FALSE)
+pp_check(total_forays_mod_site_loglink_struct)
+#looks good
+
+hypothesis(total_forays_mod_site_loglink_struct, "mean_structure_c<0") 
+
+total_forays_mod_site_loglink_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+
+
+
+
+####---------Time of day---------
+total_direct_forays_mod_site_loglink_time <-
+  brm(forays_per_minute ~ time_hours_c   +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_forays_mod_site_loglink_time") #worked
+print(total_direct_forays_mod_site_loglink_time)
+
+plot(total_direct_forays_mod_site_loglink_time, ask = FALSE)
+pp_check(total_direct_forays_mod_site_loglink_time)
+#looks good
+
+hypothesis(total_direct_forays_mod_site_loglink_time, "time_hours_c<0") 
+
+total_direct_forays_mod_site_loglink_time%>%
+  spread_draws(b_time_hours_c)%>%
+  median_hdi(exp(b_time_hours_c))
+
+
+
+
+
+####---------Turf cover---------
+total_forays_mod_site_loglink_turf <-
+  brm(forays_per_minute ~ mean_turf_obs_adjusted_c   +  mean_damsel_biomass_c  + N15_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_turf") #worked
+print(total_forays_mod_site_loglink_turf)
+
+plot(total_forays_mod_site_loglink_turf, ask = FALSE)
+pp_check(total_forays_mod_site_loglink_turf)
+#looks good
+
+hypothesis(total_forays_mod_site_loglink_turf, "mean_turf_obs_adjusted_c<0") #.49
+
+total_forays_mod_site_loglink_turf%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+#1.000462	0.9455902	1.062569	
+
+
+####---------individual size---------
+behav_dat_w_site_c_dist_foray_size<-
+  behav_dat_w_site_c_dist_foray%>%
+   mutate(TL_cm_c = base::scale(Size, center = TRUE, scale = FALSE))
+
+
+total_forays_mod_site_loglink_size <-
+  brm(sum_dist_foray_min_plus1 ~ TL_cm_c + (1|site),
+                data=behav_dat_w_site_c_dist_foray_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_size") #worked
+print(total_forays_mod_site_loglink_size)
+
+hypothesis(total_forays_mod_site_loglink_size, "TL_cm_c>0") 
+
+total_forays_mod_site_loglink_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+
+```
+
+
+
+###bites per bout: mean_bites_per_foray --------
+
+##n15 effects on mean_bites_per_foray
+```{r, message=FALSE}
+
+###Run models--------
+###NEW DAG - ONLY OPTION----
+total_foraybites_n15_mod_site_loglink_option3 <-
+  brm(mean_bites_per_foray ~ N15_c + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_n15_mod_site_loglink_option3") #worked
+print(total_foraybites_n15_mod_site_loglink_option3)
+
+plot(total_foraybites_n15_mod_site_loglink_option3, ask = FALSE)
+pp_check(total_foraybites_n15_mod_site_loglink_option3)
+#looks good
+
+hypothesis(total_foraybites_n15_mod_site_loglink_option3, "N15_c<0") #.98
+
+total_foraybites_n15_mod_site_loglink_option3%>%
+  spread_draws(b_N15_c)%>%
+  median_hdi(exp(b_N15_c))
+#0.89494	0.8188675	0.9768487	
+1 -  0.89494 #0.10506
+1 -  0.8188675 # 0.1811325
+1 -  0.9768487 #0.0231513
+
+```
+
+
+
+###compare to other cuases of behavior - BITES PER FORAY
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_foraybites_mod_site_loglink_aggression <-
+  brm(mean_bites_per_foray ~ Binary_chases + mean_atri_biomass_c + mean_damsel_biomass_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_foraybites_mod_site_loglink_aggression") #worked
+print(total_and_direct_foraybites_mod_site_loglink_aggression)
+
+plot(total_and_direct_foraybites_mod_site_loglink_aggression, ask = FALSE)
+pp_check(total_and_direct_foraybites_mod_site_loglink_aggression)
+#looks good
+
+hypothesis(total_and_direct_foraybites_mod_site_loglink_aggression, "Binary_chasesYes<0") 
+
+total_and_direct_foraybites_mod_site_loglink_aggression%>%
+  spread_draws(b_Binary_chasesYes)%>%
+  median_hdi(exp(b_Binary_chasesYes))
+
+
+
+#####A tri biomass----------------
+total_foraybites_mod_site_loglink_atribio <-
+  brm(mean_bites_per_foray ~ mean_atri_biomass_c +  N15_c + mean_predator_biomass_c + mean_structure_c  + mean_turf_obs_adjusted_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_atribio") 
+print(total_foraybites_mod_site_loglink_atribio)
+
+plot(total_foraybites_mod_site_loglink_atribio, ask = FALSE)
+pp_check(total_foraybites_mod_site_loglink_atribio)
+#looks good
+
+hypothesis(total_foraybites_mod_site_loglink_atribio, "mean_atri_biomass_c<0") 
+
+total_foraybites_mod_site_loglink_atribio%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+
+
+
+####Damselfish----------------
+total_foraybites_mod_site_loglink_damsel <-
+  brm(mean_bites_per_foray ~ mean_damsel_biomass_c + mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_damsel") #worked
+print(total_foraybites_mod_site_loglink_damsel)
+
+plot(total_foraybites_mod_site_loglink_damsel, ask = FALSE)
+pp_check(total_foraybites_mod_site_loglink_damsel)
+#looks good
+
+hypothesis(total_foraybites_mod_site_loglink_damsel, "mean_damsel_biomass_c<0") 
+
+total_foraybites_mod_site_loglink_damsel%>%
+  spread_draws(b_mean_damsel_biomass_c)%>%
+  median_hdi(exp(b_mean_damsel_biomass_c))
+
+
+
+####---------Predators---------
+total_foraybites_mod_site_loglink_pred <-
+  brm(mean_bites_per_foray ~ mean_predator_biomass_c + mean_structure_c  +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_pred") #worked
+print(total_foraybites_mod_site_loglink_pred)
+
+plot(total_foraybites_mod_site_loglink_pred, ask = FALSE)
+pp_check(total_foraybites_mod_site_loglink_pred)
+#looks good
+
+hypothesis(total_foraybites_mod_site_loglink_pred, "mean_predator_biomass_c<0") 
+
+total_foraybites_mod_site_loglink_pred%>%
+  spread_draws(b_mean_predator_biomass_c)%>%
+  median_hdi(exp(b_mean_predator_biomass_c))
+
+
+####---------Structure---------
+total_foraybites_mod_site_loglink_struct <-
+  brm(mean_bites_per_foray ~ mean_structure_c  + log_wave_c +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_struct") #worked
+print(total_foraybites_mod_site_loglink_struct)
+
+plot(total_foraybites_mod_site_loglink_struct, ask = FALSE)
+pp_check(total_foraybites_mod_site_loglink_struct)
+#looks good
+
+hypothesis(total_foraybites_mod_site_loglink_struct, "mean_structure_c<0") #
+
+total_foraybites_mod_site_loglink_struct%>%
+  spread_draws(b_mean_structure_c)%>%
+  median_hdi(exp(b_mean_structure_c))
+
+
+
+####---------Time of day---------
+total_direct_foraybites_mod_site_loglink_time <-
+  brm(mean_bites_per_foray ~ time_hours_c   +  (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_foraybites_mod_site_loglink_time") #worked
+print(total_direct_foraybites_mod_site_loglink_time)
+
+plot(total_direct_foraybites_mod_site_loglink_time, ask = FALSE)
+pp_check(total_direct_foraybites_mod_site_loglink_time)
+#looks good
+
+hypothesis(total_direct_foraybites_mod_site_loglink_time, "time_hours_c<0") #
+
+total_direct_foraybites_mod_site_loglink_time%>%
+  spread_draws(b_time_hours_c)%>%
+  median_hdi(exp(b_time_hours_c))
+
+
+
+
+####---------Turf cover---------
+total_foraybites_mod_site_loglink_turf <-
+  brm(mean_bites_per_foray ~ mean_turf_obs_adjusted_c   +  mean_damsel_biomass_c  + N15_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_turf") #worked
+print(total_foraybites_mod_site_loglink_turf)
+
+plot(total_foraybites_mod_site_loglink_turf, ask = FALSE)
+pp_check(total_foraybites_mod_site_loglink_turf)
+#looks good
+
+hypothesis(total_foraybites_mod_site_loglink_turf, "mean_turf_obs_adjusted_c<0") #
+
+total_foraybites_mod_site_loglink_turf%>%
+  spread_draws(b_mean_turf_obs_adjusted_c)%>%
+  median_hdi(exp(b_mean_turf_obs_adjusted_c))
+
+
+
+####---------individual size---------
+total_foraybites_mod_site_loglink_size <-
+  brm(mean_bites_per_foray ~ TL_cm_c + (1|site),
+                data=behav_dat_w_site_c_dist_foray_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_size") #worked
+print(total_foraybites_mod_site_loglink_size)
+
+hypothesis(total_foraybites_mod_site_loglink_size, "TL_cm_c>0") #
+
+total_foraybites_mod_site_loglink_size%>%
+  spread_draws(b_TL_cm_c)%>%
+  median_hdi(exp(b_TL_cm_c))
+
+```
+
+
+#----------------PLOTS ----------------------
+
+###let's plot these: n15------
+
+###total bites plots--------
+```{r}
+bites_dag_me<-conditional_effects(total_bites_n15_mod_site_loglink_option3, effects = "N15_c", plot = FALSE)[[1]]
+
+mean(behav_dat_w_site_c_dist$N15)
+
+bites_dag_me_unscale<-
+  bites_dag_me%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+bites_draws<-
+behav_dat_w_site_c %>%
+  data_grid(N15_c = seq_range(N15_c, n = 50),
+            log_wave_c = 0) %>%
+  add_epred_draws(total_bites_n15_mod_site_loglink_option3, ndraws = 500, re_formula = NA)
+
+
+bites_draws_rescale<-
+  bites_draws%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+bites_draw_plot<-
+behav_dat_w_site_c%>%
+  ggplot(aes(x = N15, y = total_bites_per_minute))+
+  geom_line(data = bites_draws_rescale, aes(y = .epred, x = N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = bites_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+   geom_point(color = "#d0e2af", fill = "#d0e2af", size = 3, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+     xlab(expression(Turf~italic(delta)^15*N)) +
+  ylab("Bites per minute")+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+bites_draw_plot
+###
+
+###posterior plot:
+bites_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(total_bites_n15_mod_site_loglink_option3), aes(x = exp(b_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+ scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+ theme_minimal()+
+   ylab("")+
+   # xlab(expression(Effect~of~surgeonfish~italic(delta)^15*N~on~growth)) +
+   xlab("")+
+ # xlim(c(-1,2))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+bites_plot_post_dist
+
+```
+
+
+####total distance travelled Plots (total effect)------
+```{r}
+dist_dag_me<-conditional_effects(total_sumdist_n15_mod_site_loglink_option3, effects = "N15_c", plot = FALSE)[[1]]
+
+mean(behav_dat_w_site_c_dist$N15)
+
+dist_dag_me_unscale<-
+  dist_dag_me%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+dist_draws<-
+behav_dat_w_site_c_dist %>%
+  data_grid(N15_c = seq_range(N15_c, n = 50),
+             log_wave_c = 0) %>%
+  add_epred_draws(total_sumdist_n15_mod_site_loglink_option3, ndraws = 500, re_formula = NA)
+
+dist_draws_rescale<-
+  dist_draws%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+dist_draw_plot<-
+behav_dat_w_site_c_dist%>%
+  ggplot(aes(x = N15, y = sum_dist_foray_min_plus1))+
+  geom_line(data = dist_draws_rescale, aes(y = .epred, x = N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = dist_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+       geom_point(color = "#d0e2af", fill = "#d0e2af", size = 3, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+     xlab(expression(Turf~italic(delta)^15*N)) +
+  ylab("Distance travelled (m) per minute")+
+    scale_y_continuous(breaks = c(1, 3.5, 6, 8.5, 11, 13.5), labels = c(0, 2.5, 5, 7.5, 10, 12.5)) +#because added 1 for log - reduce all by 1 #limits = c(.1,13.5), 
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+dist_draw_plot
+
+###posterior plot:
+dist_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(total_sumdist_n15_mod_site_loglink_option3), aes(x = exp(b_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+ scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+ theme_minimal()+
+   ylab("")+
+   # xlab(expression(Effect~of~surgeonfish~italic(delta)^15*N~on~growth)) +
+   xlab("")+
+ scale_x_continuous(breaks = c(0.8, 0.9, 1.0))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+dist_plot_post_dist
+
+```
+
+
+####mean distance travelled Plots------
+```{r}
+mdist_dag_me<-conditional_effects(total_meandist_n15_mod_site_loglink_option3, effects = "N15_c", plot = FALSE)[[1]]
+
+mean(behav_dat_w_site_c_dist$N15)
+
+mdist_dag_me_unscale<-
+  mdist_dag_me%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+mdist_draws<-
+behav_dat_w_site_c_dist %>%
+  data_grid(N15_c = seq_range(N15_c, n = 50),
+            log_wave_c = 0) %>%
+  add_epred_draws(total_meandist_n15_mod_site_loglink_option3, ndraws = 500, re_formula = NA)
+
+
+mdist_draws_rescale<-
+  mdist_draws%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+mdist_draw_plot<-
+behav_dat_w_site_c_dist%>%
+  ggplot(aes(x = N15, y = mean_dist_foray_min_plus1))+
+  geom_line(data = mdist_draws_rescale, aes(y = .epred, x = N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = mdist_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+  #   geom_point(aes(color = site, fill = site), size = 4, alpha = .8)+
+   geom_point(color = "#d0e2af", fill = "#d0e2af", size = 3, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+     xlab(expression(Turf~italic(delta)^15*N)) +
+  ylab("Distance travelled (m) per foray")+
+    scale_y_continuous(breaks = c(1, 3.5, 6, 8.5, 11, 13.5, 16.0), labels = c(0, 2.5, 5, 7.5, 10, 12.5, 15.0)) +#because added 1 for log - reduce all by 1
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+mdist_draw_plot
+###
+
+###posterior plot:
+mdist_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(total_meandist_n15_mod_site_loglink_option3), aes(x = exp(b_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+ scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+ theme_minimal()+
+   ylab("")+
+   # xlab(expression(Effect~of~surgeonfish~italic(delta)^15*N~on~growth)) +
+   xlab("")+
+ # xlim(c(-1,2))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+mdist_plot_post_dist
+
+```
+
+
+####number of forays PER MINUTE Plots------
+```{r}
+foray_dag_me<-conditional_effects(total_forays_n15_mod_site_loglink_option3 , effects = "N15_c", plot = FALSE)[[1]]
+
+mean(behav_dat_w_site_c_dist$N15)
+
+foray_dag_me_unscale<-
+  foray_dag_me%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+foray_draws<-
+behav_dat_w_site_c_dist_foray %>%
+  data_grid(N15_c = seq_range(N15_c, n = 50),
+             log_wave_c = 0) %>%
+  add_epred_draws(total_forays_n15_mod_site_loglink_option3 , ndraws = 500, re_formula = NA)
+
+
+foray_draws_rescale<-
+  foray_draws%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+foray_draw_plot<-
+behav_dat_w_site_c_dist_foray%>%
+  ggplot(aes(x = N15, y = forays_per_minute))+
+  geom_line(data = foray_draws_rescale, aes(y = .epred, x = N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = foray_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+   geom_point(color = "#d0e2af", fill = "#d0e2af", size = 3, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+     xlab(expression(Turf~italic(delta)^15*N)) +
+  ylab("Forays per minute")+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+foray_draw_plot
+###
+
+###posterior plot:
+foray_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(total_forays_n15_mod_site_loglink_option3), aes(x = exp(b_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+ scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+ theme_minimal()+
+   ylab("")+
+   # xlab(expression(Effect~of~surgeonfish~italic(delta)^15*N~on~growth)) +
+   xlab("")+
+ # xlim(c(-1,2))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+foray_plot_post_dist
+
+```
+
+###bites per foray plots--------
+```{r}
+bites_foray_dag_me<-conditional_effects(total_foraybites_n15_mod_site_loglink_option3, effects = "N15_c", plot = FALSE)[[1]]
+
+mean(behav_dat_w_site_c_dist$N15)
+
+bites_foray_dag_me_unscale<-
+  bites_foray_dag_me%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+bites_foray_draws<-
+behav_dat_w_site_c %>%
+  data_grid(N15_c = seq_range(N15_c, n = 50),
+             log_wave_c = 0) %>%
+  add_epred_draws(total_foraybites_n15_mod_site_loglink_option3, ndraws = 500, re_formula = NA)
+
+
+bites_foray_draws_rescale<-
+  bites_foray_draws%>%
+  mutate(N15 = N15_c +2.834105)
+
+
+bites_foray_draw_plot<-
+behav_dat_w_site_c%>%
+  ggplot(aes(x = N15, y = mean_bites_per_foray))+
+  geom_line(data = bites_foray_draws_rescale, aes(y = .epred, x = N15, group = .draw), color = "grey", alpha = .2, lwd = .5) +
+    #ylab(expression(Surgeonfish~italic(delta)^15*N)) +
+    # xlab(expression(Seabird~breeding~biomass~(kg~ha^-1))) +
+     geom_line(data = bites_foray_dag_me_unscale, aes(y = estimate__), alpha = .9, lwd = 1) +
+   geom_point(color = "#d0e2af", fill = "#d0e2af", size = 3, alpha = .8)+
+    # geom_point(color = "#f5db99", fill = "#f5db99", size = 4, alpha = .8)+
+     xlab(expression(Turf~italic(delta)^15*N)) +
+  ylab("Bites per foray")+
+  theme_bw() +
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(),
+        legend.title = element_blank(),
+        legend.direction = "horizontal",
+       #legend.position = "none"#,
+        legend.position = "inside",
+        legend.position.inside = c(.8, .8)
+       )
+bites_foray_draw_plot
+###
+
+###posterior plot:
+bites_foray_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(total_foraybites_n15_mod_site_loglink_option3), aes(x = exp(b_N15_c),  y = 1, fill =  after_stat(x< 1)), 
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+ scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+ theme_minimal()+
+   ylab("")+
+   # xlab(expression(Effect~of~surgeonfish~italic(delta)^15*N~on~growth)) +
+   xlab("")+
+ # xlim(c(-1,2))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=12)) #,  family="sans"
+bites_foray_plot_post_dist
+
+```
+
+####------------combine and save plots-------
+```{r}
+
+
+foray_plots_c<-
+  ggdraw() +
+  draw_plot(foray_draw_plot) +
+  draw_plot(foray_plot_post_dist, x = 0.6, y = .6, width = .35, height = .35)
+foray_plots_c
+
+bites_foray_plots_c<-
+  ggdraw() +
+  draw_plot(bites_foray_draw_plot) +
+  draw_plot(bites_foray_plot_post_dist, x = 0.6, y = .6, width = .35, height = .35)
+bites_foray_plots_c
+
+mean_dist_plots_c<-
+  ggdraw() +
+  draw_plot(mdist_draw_plot) +
+  draw_plot(mdist_plot_post_dist, x = 0.6, y = .6, width = .35, height = .35)
+mean_dist_plots_c
+
+tot_dist_plots_c<-
+  ggdraw() +
+  draw_plot(dist_draw_plot) +
+  draw_plot(dist_plot_post_dist, x = 0.6, y = .6, width = .35, height = .35)
+tot_dist_plots_c
+
+bites_min_plots_c<-
+  ggdraw() +
+  draw_plot(bites_draw_plot) +
+  draw_plot(bites_plot_post_dist, x = 0.6, y = .6, width = .35, height = .35)
+bites_min_plots_c
+
+empty_plot <- ggplot() + theme_void()
+
+
+behav_plots<-plot_grid(bites_min_plots_c, foray_plots_c, bites_foray_plots_c, empty_plot, tot_dist_plots_c,  mean_dist_plots_c,   ncol = 2, labels = "auto")
+behav_plots
+
+
+bite_plots<-plot_grid(bites_min_plots_c, foray_plots_c, bites_foray_plots_c,  ncol = 2, labels = "auto")
+bite_plots
+
+
+dist_plots<-plot_grid( tot_dist_plots_c,  mean_dist_plots_c,   ncol = 2, labels = "auto")
+dist_plots
+
+
+ggsave(filename = "../outputs/figures/n15_behavior_bite_plots_R1.jpg", 
+       plot = bite_plots,
+       width = 20,
+      height = 20,
+       units = "cm",
+       dpi = 300)
+
+ggsave(filename = "../outputs/figures/n15_behavior_distance_plots_R1.jpg", 
+       plot = dist_plots,
+       width = 20,
+      height = 8,
+       units = "cm",
+       dpi = 300)
+
+
+
+bite_plots2<-plot_grid(bites_min_plots_c, foray_plots_c, bites_foray_plots_c,  ncol = 3, labels = "auto")
+bite_plots2
+
+ggsave(filename = "../outputs/figures/n15_behavior_bite_plots_1row_R1.jpg", 
+       plot = bite_plots2,
+       width = 30,
+      height = 10,
+       units = "cm",
+       dpi = 300)
+
+
+```
+
+
+
+
+####PLOT MODELS FOR OTHER PREDICTORS:------
+#colors for bites =   scale_fill_manual(values = c( "lightgrey", "#40498EFF"))+ ##357BA2F
+#colors for distance =  scale_fill_manual(values = c( "lightgrey", "#d0e2af"))+
+
+
+###------------------------repeat total effect plots with centered and scaled: -------------
+
+
+###run analysis - total and direct effect of n15 on total bites per minute------------
+```{r, message=FALSE}
+#start with no trial data----------
+behav_dat_w_site_cs<-
+  behav_dat_w_site%>%
+  mutate(log_wave = log(wave_energy_manual))%>%
+  mutate(N15_cs = base::scale(N15, center = TRUE, scale = TRUE),
+          mean_atri_biomass_cs = base::scale(mean_atri_biomass, center = TRUE, scale = TRUE),
+           mean_predator_biomass_cs = base::scale(mean_predator_biomass, center = TRUE, scale = TRUE),
+          mean_damsel_biomass_cs = base::scale(mean_damsel_biomass, center = TRUE, scale = TRUE),
+         mean_turf_obs_adjusted_cs = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = TRUE),
+         mean_structure_cs =  base::scale(mean_structure, center = TRUE, scale = TRUE),
+         wave_cs = base::scale(wave_energy_manual, center = TRUE, scale = TRUE),
+          log_wave_cs = base::scale(log_wave, center = TRUE, scale = TRUE),
+         time_hours_cs = base::scale(time_hours, center = TRUE, scale = TRUE))%>%
+  mutate(log_total_bites_per_minute = log(total_bites_per_minute))
+
+
+###Run models TOTAL EFFECT--------
+total_bites_n15_mod_site_loglink_option3s <-
+  brm(total_bites_per_minute ~ N15_cs + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_n15_mod_site_loglink_option3s") #worked
+print(total_bites_n15_mod_site_loglink_option3s)
+
+```
+
+
+###compare to other potential causes of behavior: 
+```{r}
+
+#####Aggressive encounters----------------
+total_and_direct_bites_mod_site_loglink_aggressions <-
+  brm(total_bites_per_minute ~ Binary_chases + mean_atri_biomass_cs + mean_damsel_biomass_cs  +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_bites_mod_site_loglink_aggressions") #worked
+print(total_and_direct_bites_mod_site_loglink_aggressions)
+
+
+
+#####A tri biomass----------------
+total_bites_mod_site_loglink_atribios <-
+  brm(total_bites_per_minute ~ mean_atri_biomass_cs +  N15_cs + mean_predator_biomass_cs + mean_structure_cs  + mean_turf_obs_adjusted_cs +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_atribios") #2 divergent
+print(total_bites_mod_site_loglink_atribios)
+
+
+####Damselfish----------------
+total_bites_mod_site_loglink_damsels <-
+  brm(total_bites_per_minute ~ mean_damsel_biomass_cs + mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_damsels") #worked
+print(total_bites_mod_site_loglink_damsels)
+
+
+####---------Predators---------
+total_bites_mod_site_loglink_preds <-
+  brm(total_bites_per_minute ~ mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_preds") #worked
+print(total_bites_mod_site_loglink_preds)
+
+
+
+####---------Structure---------
+total_bites_mod_site_loglink_structs <-
+  brm(total_bites_per_minute ~ mean_structure_cs  + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_structs") #worked
+print(total_bites_mod_site_loglink_structs)
+
+
+
+####---------Time of day---------
+total_direct_bites_mod_site_loglink_times <-
+  brm(total_bites_per_minute ~ time_hours_cs   +  (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_bites_mod_site_loglink_times") #worked
+print(total_direct_bites_mod_site_loglink_times)
+
+
+
+####---------Turf cover---------
+total_bites_mod_site_loglink_turfs <-
+  brm(total_bites_per_minute ~ mean_turf_obs_adjusted_cs   +  mean_damsel_biomass_cs  + N15_cs + mean_structure_cs + (1|site),
+                data=behav_dat_w_site_cs, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_turfs") #worked
+print(total_bites_mod_site_loglink_turfs)
+
+
+
+####---------individual size---------
+behav_dat_w_site_cs_size<-
+  behav_dat_w_site_cs%>%
+   mutate(TL_cm_cs = base::scale(Size, center = TRUE, scale = TRUE))
+
+
+total_bites_mod_site_loglink_sizes <-
+  brm(total_bites_per_minute ~ TL_cm_cs + (1|site),
+                data=behav_dat_w_site_cs_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_mod_site_loglink_sizes") #worked
+print(total_bites_mod_site_loglink_sizes)
+
+
+```
+
+
+####repeat with all other behavior variables-----------
+```{r}
+#use: sum_distance_between_forays_per_minute  - this is the total distance travelled between forays, but scaled per minute so time doesn't matter.
+#goes to 0....so add 1?
+
+##add log column to dataframes:
+behav_dat_w_site_cs_dist<-
+  behav_dat_w_site_cs%>%
+  mutate(sum_dist_foray_min_plus1 = sum_distance_between_forays_per_minute+1,
+         mean_dist_foray_min_plus1 = mean_distance_between_forays+1,
+         distance_end_start = as.numeric(Distance_end_start_m_formatted),
+        distance_end_start_plus1 = distance_end_start+1 )
+
+```
+
+
+
+###run analysis - total and direct effect of n15 on total sumdist per minute - NEW DAGS - log------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT--------
+total_sumdist_n15_mod_site_loglink_option3s <-
+  brm(sum_dist_foray_min_plus1 ~ N15_cs + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_n15_mod_site_loglink_option3s") #worked
+print(total_sumdist_n15_mod_site_loglink_option3s)
+
+```
+
+
+###compare to other potential causes of behavior: 
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_sumdist_mod_site_loglink_aggressions <-
+  brm(sum_dist_foray_min_plus1 ~ Binary_chases + mean_atri_biomass_cs + mean_damsel_biomass_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_sumdist_mod_site_loglink_aggressions") #worked
+print(total_and_direct_sumdist_mod_site_loglink_aggressions)
+
+
+#####A tri biomass----------------
+total_sumdist_mod_site_loglink_atribios <-
+  brm(sum_dist_foray_min_plus1 ~ mean_atri_biomass_cs +  N15_cs + mean_predator_biomass_cs + mean_structure_cs  + mean_turf_obs_adjusted_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_atribios") #2 divergent
+print(total_sumdist_mod_site_loglink_atribios)
+
+
+####Damselfish----------------
+total_sumdist_mod_site_loglink_damsels <-
+  brm(sum_dist_foray_min_plus1 ~ mean_damsel_biomass_cs + mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_damsels") #worked
+print(total_sumdist_mod_site_loglink_damsels)
+
+####---------Predators---------
+total_sumdist_mod_site_loglink_preds <-
+  brm(sum_dist_foray_min_plus1 ~ mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_preds") #worked
+print(total_sumdist_mod_site_loglink_preds)
+
+
+
+####---------Structure---------
+total_sumdist_mod_site_loglink_structs <-
+  brm(sum_dist_foray_min_plus1 ~ mean_structure_cs  + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_structs") #worked
+print(total_sumdist_mod_site_loglink_structs)
+
+
+
+
+####---------Time of day---------
+total_direct_sumdist_mod_site_loglink_times <-
+  brm(sum_dist_foray_min_plus1 ~ time_hours_cs   +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_sumdist_mod_site_loglink_times") #worked
+print(total_direct_sumdist_mod_site_loglink_times)
+
+
+####---------Turf cover---------
+total_sumdist_mod_site_loglink_turfs <-
+  brm(sum_dist_foray_min_plus1 ~ mean_turf_obs_adjusted_cs   +  mean_damsel_biomass_cs  + N15_cs + mean_structure_cs + (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_turfs") #worked
+print(total_sumdist_mod_site_loglink_turfs)
+
+
+
+####individual size--------------------------
+behav_dat_w_site_cs_dist_size<-
+  behav_dat_w_site_cs_dist%>%
+   mutate(TL_cm_cs = base::scale(Size, center = TRUE, scale = TRUE))
+
+
+total_sumdist_mod_site_loglink_sizes <-
+  brm(sum_dist_foray_min_plus1 ~ TL_cm_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_sumdist_mod_site_loglink_sizes") #worked
+print(total_sumdist_mod_site_loglink_sizes)
+
+
+```
+
+
+
+###MEAN DISTANCE PER FORAY CS-------------
+```{r, message=FALSE}
+
+###Run models TOTAL EFFECT--------
+total_meandist_n15_mod_site_loglink_option3s <-
+  brm(mean_dist_foray_min_plus1 ~ N15_cs + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_n15_mod_site_loglink_option3s") #worked
+print(total_meandist_n15_mod_site_loglink_option3s)
+
+
+```
+
+
+
+
+###compare to other potential causes of behavior: Mean dist CS
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_meandist_mod_site_loglink_aggressions <-
+  brm(mean_dist_foray_min_plus1 ~ Binary_chases + mean_atri_biomass_cs + mean_damsel_biomass_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_meandist_mod_site_loglink_aggressions") #worked
+print(total_and_direct_meandist_mod_site_loglink_aggressions)
+
+
+#####A tri biomass----------------
+total_meandist_mod_site_loglink_atribios <-
+  brm(mean_dist_foray_min_plus1 ~ mean_atri_biomass_cs +  N15_cs + mean_predator_biomass_cs + mean_structure_cs  + mean_turf_obs_adjusted_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_atribios") #2 divergent
+print(total_meandist_mod_site_loglink_atribios)
+
+
+
+####Damselfish----------------
+total_meandist_mod_site_loglink_damsels <-
+  brm(mean_dist_foray_min_plus1 ~ mean_damsel_biomass_cs + mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_damsels") #worked
+print(total_meandist_mod_site_loglink_damsels)
+
+
+
+####---------Predators---------
+total_meandist_mod_site_loglink_preds <-
+  brm(mean_dist_foray_min_plus1 ~ mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_preds") #worked
+print(total_meandist_mod_site_loglink_preds)
+
+
+####---------Structure---------
+total_meandist_mod_site_loglink_structs <-
+  brm(mean_dist_foray_min_plus1 ~ mean_structure_cs  + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_structs") #worked
+print(total_meandist_mod_site_loglink_structs)
+
+
+
+
+####---------Time of day---------
+total_direct_meandist_mod_site_loglink_times <-
+  brm(mean_dist_foray_min_plus1 ~ time_hours_cs   +  (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_meandist_mod_site_loglink_times") #worked
+print(total_direct_meandist_mod_site_loglink_times)
+
+
+
+####---------Turf cover---------
+total_meandist_mod_site_loglink_turfs <-
+  brm(mean_dist_foray_min_plus1 ~ mean_turf_obs_adjusted_cs   +  mean_damsel_biomass_cs  + N15_cs + mean_structure_cs + (1|site),
+                data=behav_dat_w_site_cs_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_turfs") #worked
+print(total_meandist_mod_site_loglink_turfs)
+
+
+####----individual size
+total_meandist_mod_site_loglink_sizes <-
+  brm(mean_dist_foray_min_plus1 ~ TL_cm_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_meandist_mod_site_loglink_sizes") #worked
+print(total_meandist_mod_site_loglink_sizes)
+
+```
+
+
+
+###------number of feeding bouts------
+
+##n15 effects on feeding bouts per minute
+```{r, message=FALSE}
+
+#NEED TO SCALE BY MINUTE*****
+behav_dat_w_site_cs_dist_foray<-
+  behav_dat_w_site_cs_dist%>%
+  mutate(forays_per_minute = number_forays/(total_time_seconds_numeric/60))
+
+###Run models--------
+
+###Run models TOTAL EFFECT--------
+total_forays_n15_mod_site_loglink_option3s <-
+  brm(forays_per_minute ~ N15_cs + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_n15_mod_site_loglink_option3s") #worked
+print(total_forays_n15_mod_site_loglink_option3s)
+
+```
+
+
+
+
+
+
+###compare to other potential causes of behavior: # of forays
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_forays_mod_site_loglink_aggressions <-
+  brm(forays_per_minute ~ Binary_chases + mean_atri_biomass_cs + mean_damsel_biomass_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_forays_mod_site_loglink_aggressions") #worked
+print(total_and_direct_forays_mod_site_loglink_aggressions)
+
+
+
+#####A tri biomass----------------
+total_forays_mod_site_loglink_atribios <-
+  brm(forays_per_minute ~ mean_atri_biomass_cs +  N15_cs + mean_predator_biomass_cs + mean_structure_cs  + mean_turf_obs_adjusted_cs+  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_atribios") #2 divergent
+print(total_forays_mod_site_loglink_atribios)
+
+
+####Damselfish----------------
+total_forays_mod_site_loglink_damsels <-
+  brm(forays_per_minute ~ mean_damsel_biomass_cs + mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_damsels") #worked
+print(total_forays_mod_site_loglink_damsels)
+
+
+
+####---------Predators---------
+total_forays_mod_site_loglink_preds <-
+  brm(forays_per_minute ~ mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_preds") #worked
+print(total_forays_mod_site_loglink_preds)
+
+
+
+####---------Structure---------
+total_forays_mod_site_loglink_structs <-
+  brm(forays_per_minute ~ mean_structure_cs  + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_structs") #worked
+print(total_forays_mod_site_loglink_structs)
+
+
+
+####---------Time of day---------
+total_direct_forays_mod_site_loglink_times <-
+  brm(forays_per_minute ~ time_hours_cs   +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_forays_mod_site_loglink_times") #worked
+print(total_direct_forays_mod_site_loglink_times)
+
+
+
+####---------Turf cover---------
+total_forays_mod_site_loglink_turfs <-
+  brm(forays_per_minute ~ mean_turf_obs_adjusted_cs   +  mean_damsel_biomass_cs  + N15_cs + mean_structure_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_turfs") #worked
+print(total_forays_mod_site_loglink_turfs)
+
+
+####---------individual size---------
+
+behav_dat_w_site_cs_dist_foray_size<-
+  behav_dat_w_site_cs_dist_foray%>%
+  ungroup()%>%
+  mutate(TL_cm_cs = base::scale(Size, center = TRUE, scale = TRUE))
+
+
+total_forays_mod_site_loglink_sizes <-
+  brm(forays_per_minute ~ TL_cm_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_foray_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_forays_mod_site_loglink_sizes") #worked
+print(total_forays_mod_site_loglink_sizes)
+
+
+```
+
+
+
+
+
+
+###bites per bout: mean_bites_per_foray --------
+
+
+##n15 effects on mean_bites_per_foray
+```{r, message=FALSE}
+
+###Run models--------
+
+###Run models TOTAL EFFECT--------
+total_foraybites_n15_mod_site_loglink_option3s <-
+  brm(mean_bites_per_foray ~ N15_cs + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_n15_mod_site_loglink_option3s") #worked
+print(total_foraybites_n15_mod_site_loglink_option3s)
+
+
+```
+
+
+
+###compare to other cuases of behavior - BITES PER FORAY
+```{r, message=FALSE}
+
+#####Aggressive encounters----------------
+total_and_direct_foraybites_mod_site_loglink_aggressions <-
+  brm(mean_bites_per_foray ~ Binary_chases + mean_atri_biomass_cs + mean_damsel_biomass_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_and_direct_foraybites_mod_site_loglink_aggressions") #worked
+print(total_and_direct_foraybites_mod_site_loglink_aggressions)
+
+
+
+
+#####A tri biomass----------------
+total_foraybites_mod_site_loglink_atribios <-
+  brm(mean_bites_per_foray ~ mean_atri_biomass_cs +  N15_cs + mean_predator_biomass_cs + mean_structure_cs  + mean_turf_obs_adjusted_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_atribios") #2 divergent
+print(total_foraybites_mod_site_loglink_atribios)
+
+
+
+####Damselfish----------------
+total_foraybites_mod_site_loglink_damsels <-
+  brm(mean_bites_per_foray ~ mean_damsel_biomass_cs + mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_damsels") #worked
+print(total_foraybites_mod_site_loglink_damsels)
+
+
+####---------Predators---------
+total_foraybites_mod_site_loglink_preds <-
+  brm(mean_bites_per_foray ~ mean_predator_biomass_cs + mean_structure_cs  +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_preds") #worked
+print(total_foraybites_mod_site_loglink_preds)
+
+
+####---------Structure---------
+total_foraybites_mod_site_loglink_structs <-
+  brm(mean_bites_per_foray ~ mean_structure_cs  + log_wave_cs +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_structs") #worked
+print(total_foraybites_mod_site_loglink_structs)
+
+
+####---------Time of day---------
+total_direct_foraybites_mod_site_loglink_times <-
+  brm(mean_bites_per_foray ~ time_hours_cs   +  (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_direct_foraybites_mod_site_loglink_times") #worked
+print(total_direct_foraybites_mod_site_loglink_times)
+
+
+
+####---------Turf cover---------
+total_foraybites_mod_site_loglink_turfs <-
+  brm(mean_bites_per_foray ~ mean_turf_obs_adjusted_cs   +  mean_damsel_biomass_cs  + N15_cs + mean_structure_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_turfs") #worked
+print(total_foraybites_mod_site_loglink_turf)
+
+
+
+
+total_foraybites_mod_site_loglink_sizes <-
+  brm(mean_bites_per_foray ~ TL_cm_cs + (1|site),
+                data=behav_dat_w_site_cs_dist_foray_size, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_foraybites_mod_site_loglink_sizes") #worked
+print(total_foraybites_mod_site_loglink_sizes)
+
+
+```
+
+
+
+
+###PLOT CENTERED AND SCALED TOTAL EFFECTS--------
+###bites plot:
+```{r}
+
+###combine all together: ------
+
+all_causal_plot_bites_cs<-
+ggplot() +
+      geom_vline(xintercept=0, lty=2, alpha = .5)+
+  #forays: 
+  stat_pointinterval(data = as_draws_df(total_forays_n15_mod_site_loglink_option3s ), aes(x = (b_N15_cs),  y = 1,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_turfs), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 2,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_structs), aes(x = (b_mean_structure_cs),  y = 6,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_atribios), aes(x = (b_mean_atri_biomass_cs),  y = 5,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_preds), aes(x = (b_mean_predator_biomass_cs),  y = 7,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_damsels), aes(x = (b_mean_damsel_biomass_cs),  y = 8,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_direct_forays_mod_site_loglink_times), aes(x = (b_time_hours_cs),  y = 3,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_and_direct_forays_mod_site_loglink_aggressions), aes(x = (b_Binary_chasesYes),  y = 9,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+         stat_pointinterval(data = as_draws_df(total_forays_mod_site_loglink_sizes), aes(x = (b_TL_cm_cs),  y = 4,  color = "2Mid"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  
+  #bites:
+   stat_pointinterval(data = as_draws_df(total_bites_n15_mod_site_loglink_option3s ), aes(x = (b_N15_cs),  y = 1.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_turfs), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 2.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_structs), aes(x = (b_mean_structure_cs),  y = 6.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_atribios), aes(x = (b_mean_atri_biomass_cs),  y = 5.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_preds), aes(x = (b_mean_predator_biomass_cs),  y = 7.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_damsels), aes(x = (b_mean_damsel_biomass_cs),  y = 8.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_direct_bites_mod_site_loglink_times), aes(x = (b_time_hours_cs),  y = 3.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_and_direct_bites_mod_site_loglink_aggressions), aes(x = (b_Binary_chasesYes),  y = 9.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) +
+         stat_pointinterval(data = as_draws_df(total_bites_mod_site_loglink_sizes), aes(x = (b_TL_cm_cs),  y = 4.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  
+  #bites per foray: 
+   stat_pointinterval(data = as_draws_df(total_foraybites_n15_mod_site_loglink_option3s ), aes(x = (b_N15_cs),  y = .9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_turfs), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 1.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_structs), aes(x = (b_mean_structure_cs),  y = 5.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_atribios), aes(x = (b_mean_atri_biomass_cs),  y = 4.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_preds), aes(x = (b_mean_predator_biomass_cs),  y = 6.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_damsels), aes(x = (b_mean_damsel_biomass_cs),  y = 7.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_direct_foraybites_mod_site_loglink_times), aes(x = (b_time_hours_cs),  y = 2.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_and_direct_foraybites_mod_site_loglink_aggressions), aes(x = (b_Binary_chasesYes),  y = 8.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+        stat_pointinterval(data = as_draws_df(total_foraybites_mod_site_loglink_sizes), aes(x = (b_TL_cm_cs),  y = 3.9,  color = "3Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  
+  scale_y_continuous(breaks = c(9, 8, 7, 6,  5, 4, 3, 2, 1), labels = c("Aggressive encounters", "Damselfish biomass",  "Predator biomass", "Structural complexity","Surgeonfish biomass", "Surgeonfish size", "Time of day",  "Turf cover", expression(Turf~italic(delta)^15*N)))+ #"Turf nutrients" 
+  
+    scale_color_manual(values = c("1Dark" = "#20244D", "2Mid" = "#40498E", "3Light" = "#8CA0D9"),  name = " ", labels = c("Bites per minute", "Forays per minute", "Bites per foray"))+ 
+
+   ylab("")+
+   xlab("Effect on feeding rate metrics")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        legend.position.inside = TRUE,
+        legend.position = c(.99, .01),  
+        legend.justification = c("right", "bottom"),
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=17)) #,  family="sans"
+
+all_causal_plot_bites_cs
+
+```
+
+
+
+###distance plots
+```{r}
+###combined:
+all_causal_plot_dist2_cs<-
+ggplot() +
+      geom_vline(xintercept=0, lty=2, alpha = .5)+
+
+  #forays: 
+  stat_pointinterval(data = as_draws_df(total_meandist_n15_mod_site_loglink_option3s ), aes(x = (b_N15_cs),  y = 1,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_turfs), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 2,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_structs), aes(x = (b_mean_structure_cs),  y = 6,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_atribios), aes(x = (b_mean_atri_biomass_cs),  y = 5,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_preds), aes(x = (b_mean_predator_biomass_cs),  y = 7,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_damsels), aes(x = (b_mean_damsel_biomass_cs),  y =8,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_direct_meandist_mod_site_loglink_times), aes(x = (b_time_hours_cs),  y = 3,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_and_direct_meandist_mod_site_loglink_aggressions), aes(x = (b_Binary_chasesYes),  y = 9,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+           stat_pointinterval(data = as_draws_df(total_meandist_mod_site_loglink_sizes), aes(x = (b_TL_cm_cs),  y = 4,  color = "2Light"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  #bites:
+   stat_pointinterval(data = as_draws_df(total_sumdist_n15_mod_site_loglink_option3s ), aes(x = (b_N15_cs),  y = 1.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_turfs), aes(x = (b_mean_turf_obs_adjusted_cs),  y = 2.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_structs), aes(x = (b_mean_structure_cs),  y = 6.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_atribios), aes(x = (b_mean_atri_biomass_cs),  y = 5.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_preds), aes(x = (b_mean_predator_biomass_cs),  y = 7.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_damsels), aes(x = (b_mean_damsel_biomass_cs),  y = 8.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+    stat_pointinterval(data = as_draws_df(total_direct_sumdist_mod_site_loglink_times), aes(x = (b_time_hours_cs),  y = 3.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+      stat_pointinterval(data = as_draws_df(total_and_direct_sumdist_mod_site_loglink_aggressions), aes(x = (b_Binary_chasesYes),  y = 9.1,   color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) +
+             stat_pointinterval(data = as_draws_df(total_sumdist_mod_site_loglink_sizes), aes(x = (b_TL_cm_cs),  y = 4.1,  color = "1Dark"), 
+               point_interval=median_hdi, .width=c(.9,.8)) + 
+  
+  scale_y_continuous(breaks = c(9, 8, 7, 6,  5, 4, 3, 2, 1), labels = c("", "",  "", "","",  "",  "",  "" ,  ""  ))+
+  
+    scale_color_manual(values = c("1Dark" =  "#5a7d4e", "2Light" = "#d0e2af"),  name = " ", labels = c("Distance per minute", "Distance per foray"))+ 
+
+   ylab("")+
+   xlab("Effect on distance metrics")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        legend.position.inside = TRUE,
+        legend.position = c(.01, .01),  
+        legend.justification = c("left", "bottom"),
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=17)) #,  family="sans"
+
+all_causal_plot_dist2_cs
+
+```
+
+
+##plot all:
+```{r}
+
+##only one label set
+behav_dist_comb_plots2_cs<-plot_grid(all_causal_plot_bites_cs, all_causal_plot_dist2_cs, ncol = 2, labels = "auto", rel_widths = c(1, .72), label_x = c(.3, 0))
+behav_dist_comb_plots2_cs
+
+
+
+ggsave(filename = "../outputs/figures/behavior_and_distance_all_causal_plots_scaled_R1.jpg", 
+       plot = behav_dist_comb_plots2_cs,
+   width = 30,
+      height = 25,
+       units = "cm",
+       dpi = 300)
+
+
+
+```

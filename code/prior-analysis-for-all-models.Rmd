@@ -1,0 +1,332 @@
+---
+title: "prior analysis for all models"
+output: html_document
+date: "2026-05-07"
+---
+
+#load all models, run prior analaysis as per reviewer comments:
+
+
+#packages
+```{r}
+library(priorsense)
+
+citation('priorsense')
+
+```
+
+
+#models - nutrients -see file: seabird_turf_analysis_R1.Rmd 
+#done within R1 code, no issues
+
+
+
+#models - behavior
+```{r}
+#behavior, dag: 
+
+#effects on total bites:
+total_bites_n15_mod_site_loglink_option3<-readRDS("../outputs/brms/total_bites_n15_mod_site_loglink_option3.RDS")
+powerscale_sensitivity(total_bites_n15_mod_site_loglink_option3) #no issues
+
+
+total_and_direct_bites_mod_site_loglink_aggression<-readRDS("../outputs/brms/total_and_direct_bites_mod_site_loglink_aggression.RDS")
+powerscale_sensitivity(total_and_direct_bites_mod_site_loglink_aggression) #no issues
+
+
+total_bites_mod_site_loglink_atribio<-readRDS("../outputs/brms/total_bites_mod_site_loglink_atribio.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_atribio) #no issues
+#only issue:              sd_site__Intercept 0.057      0.036 potential strong prior / weak likelihood
+#don't think this is a concern, with site....
+
+total_bites_mod_site_loglink_damsel<-readRDS("../outputs/brms/total_bites_mod_site_loglink_damsel.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_damsel) #no issues
+
+
+total_bites_mod_site_loglink_pred<-readRDS("../outputs/brms/total_bites_mod_site_loglink_pred.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_pred) #no issues
+
+
+total_bites_mod_site_loglink_struct<-readRDS("../outputs/brms/total_bites_mod_site_loglink_struct.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_struct) #no issues
+
+
+total_direct_bites_mod_site_loglink_time<-readRDS("../outputs/brms/total_direct_bites_mod_site_loglink_time.RDS")
+powerscale_sensitivity(total_direct_bites_mod_site_loglink_time) #no issues
+
+
+total_bites_mod_site_loglink_turf<-readRDS("../outputs/brms/total_bites_mod_site_loglink_turf.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_turf) #no issues
+
+
+total_bites_mod_site_loglink_size<-readRDS("../outputs/brms/total_bites_mod_site_loglink_size.RDS")
+powerscale_sensitivity(total_bites_mod_site_loglink_size) #no issues
+
+
+
+
+```
+
+
+
+#models - behavior
+```{r}
+#behavior, dag: 
+
+#effects on sumdist:
+total_sumdist_n15_mod_site_loglink_option3<-readRDS("../outputs/brms/total_sumdist_n15_mod_site_loglink_option3.RDS")
+powerscale_sensitivity(total_sumdist_n15_mod_site_loglink_option3) #no issues
+
+
+total_and_direct_sumdist_mod_site_loglink_aggression<-readRDS("../outputs/brms/total_and_direct_sumdist_mod_site_loglink_aggression.RDS")
+powerscale_sensitivity(total_and_direct_sumdist_mod_site_loglink_aggression) #no issues
+
+
+total_sumdist_mod_site_loglink_atribio<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_atribio.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_atribio) #no issues
+
+
+total_sumdist_mod_site_loglink_damsel<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_damsel.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_damsel) #no issues
+
+
+total_sumdist_mod_site_loglink_pred<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_pred.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_pred) #no issues
+
+
+total_sumdist_mod_site_loglink_struct<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_struct.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_struct) #no issues
+
+
+total_direct_sumdist_mod_site_loglink_time<-readRDS("../outputs/brms/total_direct_sumdist_mod_site_loglink_time.RDS")
+powerscale_sensitivity(total_direct_sumdist_mod_site_loglink_time) #no issues
+
+
+total_sumdist_mod_site_loglink_turf<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_turf.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_turf) #no issues
+
+total_sumdist_mod_site_loglink_size<-readRDS("../outputs/brms/total_sumdist_mod_site_loglink_size.RDS")
+powerscale_sensitivity(total_sumdist_mod_site_loglink_size) #no issues
+
+
+#no issues***
+
+
+```
+
+
+
+#models - behavior
+```{r}
+#behavior, dag: 
+
+#effects on mean distance
+total_meandist_n15_mod_site_loglink_option3<-readRDS("../outputs/brms/total_meandist_n15_mod_site_loglink_option3.RDS")
+powerscale_sensitivity(total_meandist_n15_mod_site_loglink_option3) #no issues
+
+
+total_and_direct_meandist_mod_site_loglink_aggression<-readRDS("../outputs/brms/total_and_direct_meandist_mod_site_loglink_aggression.RDS")
+powerscale_sensitivity(total_and_direct_meandist_mod_site_loglink_aggression) #no issues
+
+
+total_meandist_mod_site_loglink_atribio<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_atribio.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_atribio)
+#sd_site__Intercept 0.088      0.078 potential prior-data conflict
+
+total_meandist_mod_site_loglink_damsel<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_damsel.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_damsel) #no issues
+
+
+total_meandist_mod_site_loglink_pred<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_pred.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_pred) #no issues
+
+
+total_meandist_mod_site_loglink_struct<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_struct.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_struct) #no issues
+
+
+total_direct_meandist_mod_site_loglink_time<-readRDS("../outputs/brms/total_direct_meandist_mod_site_loglink_time.RDS")
+powerscale_sensitivity(total_direct_meandist_mod_site_loglink_time) #no issues
+
+
+total_meandist_mod_site_loglink_turf<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_turf.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_turf) #no issues
+
+total_meandist_mod_site_loglink_size<-readRDS("../outputs/brms/total_meandist_mod_site_loglink_size.RDS")
+powerscale_sensitivity(total_meandist_mod_site_loglink_size) #no issues
+
+
+
+```
+
+
+#models - behavior
+```{r}
+#behavior, dag: 
+
+#effects on feeding bouts
+total_forays_n15_mod_site_loglink_option3<-readRDS("../outputs/brms/total_forays_n15_mod_site_loglink_option3.RDS")
+powerscale_sensitivity(total_forays_n15_mod_site_loglink_option3) #no issues
+
+
+total_and_direct_forays_mod_site_loglink_aggression<-readRDS("../outputs/brms/total_and_direct_forays_mod_site_loglink_aggression.RDS")
+powerscale_sensitivity(total_and_direct_forays_mod_site_loglink_aggression) #no issues
+
+
+total_forays_mod_site_loglink_atribio<-readRDS("../outputs/brms/total_forays_mod_site_loglink_atribio.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_atribio) 
+# sd_site__Intercept 0.083      0.043 potential strong prior / weak likelihood
+
+
+
+total_forays_mod_site_loglink_damsel<-readRDS("../outputs/brms/total_forays_mod_site_loglink_damsel.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_damsel) #no issues
+
+
+total_forays_mod_site_loglink_pred<-readRDS("../outputs/brms/total_forays_mod_site_loglink_pred.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_pred) #no issues
+
+
+total_forays_mod_site_loglink_struct<-readRDS("../outputs/brms/total_forays_mod_site_loglink_struct.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_struct) #no issues
+
+
+total_direct_forays_mod_site_loglink_time<-readRDS("../outputs/brms/total_direct_forays_mod_site_loglink_time.RDS")
+powerscale_sensitivity(total_direct_forays_mod_site_loglink_time) #no issues
+
+
+total_forays_mod_site_loglink_turf<-readRDS("../outputs/brms/total_forays_mod_site_loglink_turf.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_turf) #no issues
+
+total_forays_mod_site_loglink_size<-readRDS("../outputs/brms/total_forays_mod_site_loglink_size.RDS")
+powerscale_sensitivity(total_forays_mod_site_loglink_size) #no issues
+
+
+```
+
+
+
+#models - behavior
+```{r}
+#behavior, dag: 
+
+#effects on bites per bout
+total_foraybites_n15_mod_site_loglink_option3<-readRDS("../outputs/brms/total_foraybites_n15_mod_site_loglink_option3.RDS")
+powerscale_sensitivity(total_foraybites_n15_mod_site_loglink_option3) #no issues
+
+
+total_and_direct_foraybites_mod_site_loglink_aggression<-readRDS("../outputs/brms/total_and_direct_foraybites_mod_site_loglink_aggression.RDS")
+powerscale_sensitivity(total_and_direct_foraybites_mod_site_loglink_aggression) #no issues
+
+
+total_foraybites_mod_site_loglink_atribio<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_atribio.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_atribio) #no issues
+
+
+total_foraybites_mod_site_loglink_damsel<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_damsel.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_damsel) #no issues
+
+
+total_foraybites_mod_site_loglink_pred<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_pred.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_pred) #no issues
+
+
+total_foraybites_mod_site_loglink_struct<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_struct.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_struct) #no issues
+
+
+total_direct_foraybites_mod_site_loglink_time<-readRDS("../outputs/brms/total_direct_foraybites_mod_site_loglink_time.RDS")
+powerscale_sensitivity(total_direct_foraybites_mod_site_loglink_time) #no issues
+
+
+total_foraybites_mod_site_loglink_turf<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_turf.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_turf) #no issues
+
+
+total_foraybites_mod_site_loglink_size<-readRDS("../outputs/brms/total_foraybites_mod_site_loglink_size.RDS")
+powerscale_sensitivity(total_foraybites_mod_site_loglink_size) #no issues
+
+
+```
+
+
+#do further investigation of ones with issues: 
+```{r}
+library(brms)
+
+powerscale_sensitivity(total_bites_mod_site_loglink_atribio) 
+posterior_summary(total_bites_mod_site_loglink_atribio, variable = "sd_site__Intercept")
+#  Estimate Est.Error      Q2.5    Q97.5
+#sd_site__Intercept 0.5285804 0.4511101 0.0619051 1.716939
+
+powerscale_sensitivity(total_forays_mod_site_loglink_atribio) 
+posterior_summary(total_forays_mod_site_loglink_atribio, variable = "sd_site__Intercept")
+#sd_site__Intercept 0.3645163 0.3984101 0.02442716 1.325267
+
+powerscale_sensitivity(total_meandist_mod_site_loglink_atribio)
+posterior_summary(total_meandist_mod_site_loglink_atribio, variable = "sd_site__Intercept")
+#sd_site__Intercept 0.5228321  0.479052 0.05451812 1.702896
+
+
+#compare to: 
+posterior_summary(total_foraybites_mod_site_loglink_size, variable = "sd_site__Intercept")
+#sd_site__Intercept 0.2944834 0.1438565 0.0786715 0.6518295
+
+
+#issue is that there is wide estimated error on sd_site for certain models. this is unsurprising given the relatively few sites (8)...not a concern. 
+
+```
+
+
+##demographics
+```{r}
+#muscle n15
+acan_n15_sb_n_logwave<-readRDS("../outputs/brms/acan_n15_sb_n_logwave.RDS")
+powerscale_sensitivity(acan_n15_sb_n_logwave) #no issues
+
+
+#condition
+mod_hsi_n15<-readRDS("../outputs/brms/mod_hsi_n15.RDS")
+powerscale_sensitivity(mod_hsi_n15) #no issues
+
+mod_hsi_by_atri_bio<-readRDS("../outputs/brms/mod_hsi_by_atri_bio.RDS")
+powerscale_sensitivity(mod_hsi_by_atri_bio) #no issues
+
+mod_hsi_by_pred<-readRDS("../outputs/brms/mod_hsi_by_pred.RDS")
+powerscale_sensitivity(mod_hsi_by_pred) #no issues
+
+mod_hsi_by_struct<-readRDS("../outputs/brms/mod_hsi_by_struct.RDS")
+powerscale_sensitivity(mod_hsi_by_struct) #no issues
+
+mod_hsi_by_turf_cover<-readRDS("../outputs/brms/mod_hsi_by_turf_cover.RDS")
+powerscale_sensitivity(mod_hsi_by_turf_cover) #no issues
+
+mod_hsi_by_size<-readRDS("../outputs/brms/mod_hsi_by_size.RDS")
+powerscale_sensitivity(mod_hsi_by_size) #no issues
+
+
+
+###growth
+mod_growth_by_n15_option1<-readRDS("../outputs/brms/mod_growth_by_n15_option1.RDS")
+powerscale_sensitivity(mod_growth_by_n15_option1) #no issues
+
+mod_growth_by_atri_bio<-readRDS("../outputs/brms/mod_growth_by_atri_bio.RDS")
+powerscale_sensitivity(mod_growth_by_atri_bio) #no issues
+
+mod_growth_by_pred<-readRDS("../outputs/brms/mod_growth_by_pred.RDS")
+powerscale_sensitivity(mod_growth_by_pred) #no issues
+
+mod_growth_by_struct<-readRDS("../outputs/brms/mod_growth_by_struct.RDS")
+powerscale_sensitivity(mod_growth_by_struct) #no issues
+
+mod_growth_by_turf_cover<-readRDS("../outputs/brms/mod_growth_by_turf_cover.RDS")
+powerscale_sensitivity(mod_growth_by_turf_cover) #no issues
+
+mod_growth_by_size<-readRDS("../outputs/brms/mod_growth_by_size.RDS")
+powerscale_sensitivity(mod_growth_by_size) #no issues
+
+
+#no issues**
+
+```
+

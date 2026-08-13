@@ -962,5 +962,23 @@ Anova(n15_lm)
 #               Chisq Df Pr(>Chisq)
 #Capture_period 0.7527  2     0.6864
 
+
+#check which capture periods are different:
+em_sum_gsi<-emmeans(gsi_lm, ~Capture_period)
+em_sum_gsi
+
+pairs(em_sum_gsi)
+
+
+dem_dat_w_site_capt_F_only%>%
+  group_by(Capture_period)%>%
+  summarize(mean_GSI = mean(GSI, na.rm = TRUE),
+            n_GSI = length(GSI))
+
+
+dem_dat_w_site_capt%>%
+  group_by(Capture_period)%>%
+  summarize(mean_GSI = mean(GSI, na.rm = TRUE),
+            n_GSI = length(GSI))
 ```
 

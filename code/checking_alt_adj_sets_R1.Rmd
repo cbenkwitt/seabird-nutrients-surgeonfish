@@ -1,0 +1,215 @@
+---
+title: "checking_alt_adj_sets"
+output: html_document
+date: "2026-07-15"
+---
+
+
+###when reverse directionality, only one adjustment sets that change are: 
+
+#would need to add in demographic effect on behaviour: 
+
+#(1) adjustmentSets(full_dag_1, exposure = "atri_dem", outcome = "atri_behavior", type = "minimal", effect = c("total"))
+#{ atri_biomass, n15, predators, size, structure, turf_cover }
+
+#(2) adjustmentSets(full_dag_2, exposure = "atri_biomass", outcome = "atri_behavior", type = "minimal", effect = c("total"))
+#{ atri_dem, n15, predators, structure, turf_cover }
+
+#and that's it!
+
+##load packages
+```{r, warning = FALSE, message = FALSE, results = FALSE, fig.show='hide'}
+library(tidyverse) #for everything
+
+library(cowplot) #for combining plots
+
+#for bayesian modelling and interpreting:
+library(brms)
+library(tidybayes)
+library(emmeans)
+library(tidybayes)
+library(modelr)
+
+```
+
+
+#load data: 
+```{r, warning = FALSE, message = FALSE, results = FALSE}
+behav_dat_w_site<-read.csv("../data/behav_w_site_dat.csv")
+behav_dat_w_site
+
+
+behav_dat_w_site_c2<-
+  behav_dat_w_site%>%
+  mutate(N15_c = base::scale(N15, center = TRUE, scale = FALSE),
+          mean_atri_biomass_c = base::scale(mean_atri_biomass, center = TRUE, scale = FALSE),
+           mean_predator_biomass_c = base::scale(mean_predator_biomass, center = TRUE, scale = FALSE),
+         mean_turf_obs_adjusted_c = base::scale(mean_turf_obs_adjusted, center = TRUE, scale = FALSE),
+         mean_structure_c =  base::scale(mean_structure, center = TRUE, scale = FALSE),
+         mean_seabird_n_input_c =  base::scale(mean_seabird_n_input, center = TRUE, scale = FALSE),
+        size_c =  base::scale(Size, center = TRUE, scale = FALSE),
+      mean_hsi_c =  base::scale(hsi, center = TRUE, scale = FALSE),
+        mean_growth_c =  base::scale(growth_resid, center = TRUE, scale = FALSE) )%>%
+  mutate(log_total_bites_per_minute = log(total_bites_per_minute))
+
+
+```
+
+
+#(1) adjustmentSets(full_dag_1, exposure = "atri_dem", outcome = "atri_behavior", type = "minimal", effect = c("total"))
+#{ atri_biomass, n15, predators, size, structure, turf_cover }
+```{r}
+###Run models TOTAL BITES--------
+total_bites_growth_mod_site_loglink_alt <-
+  brm(total_bites_per_minute ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + size_c + (1|site),
+                data=behav_dat_w_site_c2, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_growth_mod_site_loglink_alt") #worked
+print(total_bites_growth_mod_site_loglink_alt)
+
+plot(total_bites_growth_mod_site_loglink_alt, ask = FALSE)
+pp_check(total_bites_growth_mod_site_loglink_alt)
+#looks good
+
+hypothesis(total_bites_growth_mod_site_loglink_alt, "mean_growth_c<0") #0.45 - so no effect
+
+total_bites_growth_mod_site_loglink_alt%>%
+  spread_draws(b_mean_growth_c)%>%
+  median_hdi(exp(b_mean_growth_c))
+
+###Run models TOTAL BITES--------
+total_bites_hsi_mod_site_loglink_alt <-
+  brm(total_bites_per_minute ~mean_hsi_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + size_c + (1|site),
+                data=behav_dat_w_site_c2, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_hsi_mod_site_loglink_alt") #worked
+print(total_bites_hsi_mod_site_loglink_alt)
+#DIDNT WORK***
+
+
+#run model - sumdist ----
+behav_dat_w_site_c2_dist<-
+  behav_dat_w_site_c2%>%
+  mutate(sum_dist_foray_min_plus1 = sum_distance_between_forays_per_minute+1,
+         mean_dist_foray_min_plus1 = mean_distance_between_forays+1,
+         distance_end_start = as.numeric(Distance_end_start_m_formatted),
+        distance_end_start_plus1 = distance_end_start+1 )
+
+
+sum_dist_growth_mod_site_loglink_alt <-
+  brm(sum_dist_foray_min_plus1 ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + size_c + (1|site),
+                data=behav_dat_w_site_c2_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/sum_dist_growth_mod_site_loglink_alt") #worked
+print(sum_dist_growth_mod_site_loglink_alt)
+
+plot(sum_dist_growth_mod_site_loglink_alt, ask = FALSE)
+pp_check(sum_dist_growth_mod_site_loglink_alt)
+#looks good
+
+hypothesis(sum_dist_growth_mod_site_loglink_alt, "mean_growth_c<0") #0.71 - so not much effect...large uncertainty intervals
+
+
+#run model: mean_dist_foray_min_plus1----
+mean_dist_growth_mod_site_loglink_alt <-
+  brm(mean_dist_foray_min_plus1 ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + size_c + (1|site),
+                data=behav_dat_w_site_c2_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/mean_dist_growth_mod_site_loglink_alt") #worked
+print(mean_dist_growth_mod_site_loglink_alt)
+
+plot(mean_dist_growth_mod_site_loglink_alt, ask = FALSE)
+pp_check(mean_dist_growth_mod_site_loglink_alt)
+#looks good
+
+hypothesis(mean_dist_growth_mod_site_loglink_alt, "mean_growth_c<0") #0.69 - so no effect
+
+
+#forays----
+behav_dat_w_site_c2_foray<-
+  behav_dat_w_site_c2%>%
+  mutate(forays_per_minute = number_forays/(total_time_seconds_numeric/60))
+
+
+foray_growth_mod_site_loglink_alt <-
+  brm(forays_per_minute ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + size_c + (1|site),
+                data=behav_dat_w_site_c2_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/foray_growth_mod_site_loglink_alt") #worked
+print(foray_growth_mod_site_loglink_alt)
+
+plot(foray_growth_mod_site_loglink_alt, ask = FALSE)
+pp_check(foray_growth_mod_site_loglink_alt)
+#looks good
+
+hypothesis(foray_growth_mod_site_loglink_alt, "mean_growth_c<0") #0.5 - so no effect
+
+
+```
+
+
+#(2) adjustmentSets(full_dag_2, exposure = "atri_biomass", outcome = "atri_behavior", type = "minimal", effect = c("total"))
+#{ atri_dem, n15, predators, structure, turf_cover }
+```{r}
+###Run models TOTAL BITES--------
+total_bites_biomass_mod_site_loglink_alt <-
+  brm(total_bites_per_minute ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c + (1|site),
+                data=behav_dat_w_site_c2, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/total_bites_biomass_mod_site_loglink_alt") #worked
+print(total_bites_biomass_mod_site_loglink_alt)
+
+plot(total_bites_biomass_mod_site_loglink_alt, ask = FALSE)
+pp_check(total_bites_biomass_mod_site_loglink_alt)
+#looks good
+
+hypothesis(total_bites_biomass_mod_site_loglink_alt, "mean_atri_biomass_c<0") #0.41 - so no effect
+
+total_bites_biomass_mod_site_loglink_alt%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+
+sum_dist_biomass_mod_site_loglink_alt <-
+  brm(sum_dist_foray_min_plus1 ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c  + (1|site),
+                data=behav_dat_w_site_c2_dist, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/sum_dist_biomass_mod_site_loglink_alt") #worked
+print(sum_dist_biomass_mod_site_loglink_alt)
+
+plot(sum_dist_biomass_mod_site_loglink_alt, ask = FALSE)
+pp_check(sum_dist_biomass_mod_site_loglink_alt)
+#looks good
+
+hypothesis(sum_dist_biomass_mod_site_loglink_alt, "mean_atri_biomass_c<0") #0.68 - so not much effect...large uncertainty intervals
+sum_dist_biomass_mod_site_loglink_alt%>%
+  spread_draws(b_mean_atri_biomass_c)%>%
+  median_hdi(exp(b_mean_atri_biomass_c))
+
+
+
+
+
+foray_biomass_mod_site_loglink_alt <-
+  brm(forays_per_minute ~mean_growth_c+ N15_c + mean_turf_obs_adjusted_c + mean_atri_biomass_c + mean_predator_biomass_c + mean_structure_c  + (1|site),
+                data=behav_dat_w_site_c2_foray, family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/foray_biomass_mod_site_loglink_alt") #worked
+print(foray_biomass_mod_site_loglink_alt)
+
+plot(foray_biomass_mod_site_loglink_alt, ask = FALSE)
+pp_check(foray_biomass_mod_site_loglink_alt)
+#looks good
+
+hypothesis(foray_growth_mod_site_loglink_alt, "mean_growth_c<0") #0.5 - so no effect
+foray_biomass_mod_site_loglink_alt
+
+```
+

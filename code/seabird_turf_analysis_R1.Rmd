@@ -1,0 +1,249 @@
+---
+title: "seabird-turf-anlaysis"
+author: "CEB"
+date: '2025-11-26'
+output: html_document
+---
+
+#decide on log(wave) or regular wave - check other analyses and use whatever we did there
+#probably delete exposure models for submission
+
+#load packages
+```{r}
+library(tidyverse)
+
+library(brms)
+library(tidybayes)
+
+library(priorsense)
+
+```
+
+
+#load data
+```{r}
+#behavior data:
+behav_turf_dat<-read.csv("../data/atri_comb_algae_gps.csv")
+#from: atri_comb_algae_gps_update_full_list_Oct_2024.csv, removed trial data (unused)
+behav_turf_dat
+
+#fix motu-exposure column:
+behav_turf_dat<-
+  behav_turf_dat%>%
+  unite(Motu_exposure, Motu, Exposure, remove = FALSE)
+
+#seabird data: 
+site_dat<-read.csv("../data/site_list_for_map.csv")
+site_dat
+
+```
+
+
+#combine data:
+```{r}
+behav_turf_dat%>%
+  distinct(Motu_exposure)
+
+site_dat_forc<-
+  site_dat%>%
+  mutate(Motu_exposure = site)%>%
+  mutate(Motu_exposure = gsub("west", "Protected", Motu_exposure))%>%
+  mutate(Motu_exposure = gsub("east", "Exposed", Motu_exposure))%>%
+  mutate(Motu_exposure = gsub("south", "Protected", Motu_exposure))%>%
+  mutate(Motu_exposure = gsub("north", "Exposed", Motu_exposure))%>%
+  mutate(Motu_exposure = gsub("Hir_Aur_hoa", "Hir/Tau Hoa_", Motu_exposure))%>%
+  mutate(Motu_exposure = gsub("Hiranae_lagoon", "Hiranae_", Motu_exposure))
+#don't have to worry about other sites for now  becuase they're only demographics. 
+
+
+sb_avg_behav_turf_dat<-
+  left_join(behav_turf_dat, select(site_dat_forc, c("Motu_exposure", "mean_seabird_biomass_200m", "mean_seabird_n_input_200m_kg_ha_yr","wave_energy_manual")), by =join_by(Motu_exposure))
+sb_avg_behav_turf_dat
+
+sb_avg_behav_turf_dat%>%
+  filter(is.na(mean_seabird_n_input_200m_kg_ha_yr))
+#worked!
+
+
+```
+
+
+#for looking at turf - only use the behavior follows that we use
+```{r}
+sb_avg_behav_turf_dat%>%
+  filter(!is.na(N15))
+#n = 95
+
+#and for behavior n = 98. So that means there are 3 follows used for behavior where we don't have n15...matches up.
+
+sb_avg_behav_turf_dat%>%
+  filter(!is.na(N15))%>%
+  group_by(Motu_exposure)%>%
+  summarize(n_site = length(N15))
+#Aie_Exposed	14			
+#Aie_Protected	15			
+#Hir/Tau Hoa_	2			
+#Hiranae_	11			
+#Reiono_Exposed	15			
+#Reiono_Protected	17			
+#Rimatuu_Exposed	5			
+#Rimatuu_Protected	16	
+
+
+#okay, create dataset that eliminates nas, and those not used for behavior:
+sb_turf_used<-
+  sb_avg_behav_turf_dat%>%
+  filter(!is.na(N15))
+sb_turf_used
+
+
+sb_turf_used_c<-
+  sb_turf_used%>%
+  ungroup()%>%
+  mutate(mean_seabird_biomass_200m_c=base::scale(mean_seabird_biomass_200m, center = TRUE, scale = FALSE),
+         mean_seabird_n_input_200m_c=base::scale(mean_seabird_n_input_200m_kg_ha_yr, center = TRUE, scale = FALSE),
+         log_N15 = log(N15),
+          log_wave = log(wave_energy_manual),
+        wave_energy_manual_c=base::scale(wave_energy_manual, center = TRUE, scale = FALSE),
+        log_wave_c=base::scale(log_wave, center = TRUE, scale = FALSE)
+)
+sb_turf_used_c
+
+
+```
+
+
+#run dag-based model
+```{r}
+
+##dag-based model, exposure is in adjustment set------
+#log exposure based on distribution - see also behavior file. 
+
+turf_n15_sb_n_logwave<-
+  brm(N15  ~ mean_seabird_n_input_200m_c + log_wave_c + (1|Motu_exposure),
+                data=sb_turf_used_c, 
+                family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/turf_n15_sb_n_logwave") #worked)
+
+print(turf_n15_sb_n_logwave)
+
+#check diagnositcs
+plot(turf_n15_sb_n_logwave, ask = FALSE)
+pp_check(turf_n15_sb_n_logwave)
+#looks pretty good still
+
+#quick hypothesis test to see trends:
+hypothesis(turf_n15_sb_n_logwave, c("mean_seabird_n_input_200m_c>0"))  #0.92 
+
+
+
+turf_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_200m_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_200m_c))#because log
+#1.008867	0.9948664	1.023137	
+#.8% increase....so multiply by 10 or 100
+
+range(sb_turf_used_c$mean_seabird_n_input_200m_kg_ha_yr) # 4.726281 388.861325
+
+turf_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_200m_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_200m_c*100))#because log
+#1.209914	0.8846697	1.611224
+
+
+```
+
+
+#check diagnostics - priorsense
+```{r}
+powerscale_sensitivity(turf_n15_sb_n_logwave)
+powerscale_plot_dens(turf_n15_sb_n_logwave, ask = FALSE)
+powerscale_plot_quantities(turf_n15_sb_n_logwave, ask = FALSE)
+#all overlapping, no diagnosis messages from likelihoods
+
+```
+
+
+
+###log plots from DAG
+```{r}
+
+###PLOT------
+sb_turfn15_plot_post_dist<-
+ggplot() +
+   geom_vline(xintercept=1, lty=2, alpha = .5)+
+  stat_halfeye(data = as_draws_df(turf_n15_sb_n_logwave), aes(x = exp(b_mean_seabird_n_input_200m_c*100),  y = 1, fill =  after_stat(x< 1)),
+               point_interval=median_hdi, .width=c(.9,.8),  slab_alpha = .9) + 
+#scale_fill_manual(values = c("#0072B2", "#D55E00"	))+
+  scale_fill_manual(values = c("#7bbcd5", "lightgrey"	))+ #e89c81
+  theme_minimal()+
+   ylab("")+
+    xlab(expression(Effect~of~seabirds~on~turf~italic(delta)^15*N)) +
+   ylab("")+
+  scale_x_continuous(limits = c(.7,2), breaks = c(.75, 1.0, 1.25, 1.5, 1.75, 2.0))+
+ #  xlab("")+
+  theme_bw()+
+   theme(panel.grid.major = element_blank(), # remove gridlines
+        panel.grid.minor = element_blank(), #remove gridlines
+        strip.background = element_blank(), 
+        axis.ticks.y =  element_blank(), 
+        axis.text.y =  element_blank(), 
+        legend.position = "none",  
+        rect = element_rect(fill = "transparent"),  
+        plot.background = element_rect(fill = "transparent", color = NA),
+        text=element_text(size=18)) #,  family="sans"
+sb_turfn15_plot_post_dist
+
+  
+
+
+ggsave(filename = "../outputs/figures/sb_turfn15_plot_post_dist_exp.svg",  #.jpg
+       plot = sb_turfn15_plot_post_dist,
+       width = 11,
+       height = 7.5,
+       units = "cm",
+       dpi = 300)
+```
+
+
+
+###oh wait, exposure shouldn't be in model: ---------
+```{r}
+turf_n15_sb_n<-
+  brm(N15  ~ mean_seabird_n_input_200m_c  + (1|Motu_exposure),
+                data=sb_turf_used_c, 
+                family = lognormal(),
+              iter = 3000, warmup = 1000, cores=4, chains = 4, 
+                  control = list(adapt_delta = 0.999, max_treedepth=15), 
+                file = "../outputs/brms/turf_n15_sb_n") #worked)
+
+print(turf_n15_sb_n)
+
+#check diagnositcs
+plot(turf_n15_sb_n, ask = FALSE)
+pp_check(turf_n15_sb_n)
+#looks pretty good still
+
+#quick hypothesis test to see trends:
+hypothesis(turf_n15_sb_n, c("mean_seabird_n_input_200m_c>0"))  #0.7 - there's the issue*** 
+
+
+
+turf_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_200m_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_200m_c))#because log
+#1.008867	0.9948664	1.023137	
+#.8% increase....so multiply by 10 or 100
+
+range(sb_turf_used_c$mean_seabird_n_input_200m_kg_ha_yr) # 4.726281 388.861325
+
+turf_n15_sb_n_logwave%>%
+  spread_draws(b_mean_seabird_n_input_200m_c)%>%
+  median_hdi(exp(b_mean_seabird_n_input_200m_c*100))#because log
+#1.209914	0.8846697	1.611224
+
+
+```
+

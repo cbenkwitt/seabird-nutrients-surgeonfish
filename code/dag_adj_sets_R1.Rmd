@@ -1,0 +1,524 @@
+---
+title: "DAG"
+author: "CEB"
+date: '2025-11-26'
+output: html_document
+---
+
+
+#load packages
+```{r}
+library(tidyverse)
+library(dagitty)
+```
+
+
+
+#Full dag from dagitty:
+```{r}
+#***Changes from og submission: 1. accidentally had: N_input -> turf_cover in this full dag - DELETED. 2. need to add in n15 --> turf cover-DID THIS BELOW
+
+full_dag<-
+  dagitty("dag {
+N_input -> n15
+aggression -> atri_behavior
+atri_biomass -> aggression
+atri_biomass -> atri_behavior
+atri_biomass -> atri_dem
+damselfish_biomass -> aggression
+damselfish_biomass -> atri_behavior
+damselfish_biomass -> turf_cover
+atri_behavior -> atri_dem
+exposure -> N_input
+exposure -> turf_cover
+exposure -> n15
+exposure -> structure
+turf_cover -> atri_biomass
+turf_cover -> atri_behavior
+turf_cover -> atri_dem
+n15 -> turf_cover
+n15 -> atri_biomass
+n15 -> atri_behavior
+n15 -> atri_dem
+predators -> atri_biomass
+predators -> damselfish_biomass
+predators -> atri_behavior
+predators -> atri_dem
+size -> atri_behavior
+size -> atri_dem
+structure -> atri_biomass
+structure -> damselfish_biomass
+structure -> atri_behavior
+structure -> atri_dem
+structure -> turf_cover
+structure -> predators
+time -> atri_behavior
+}")
+
+```
+
+
+
+#check adjustment sets
+```{r}
+
+#check adjustment sets - n15-----
+adjustmentSets(full_dag, exposure = "N_input", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag, exposure = "exposure", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{}
+
+
+
+#check adjustment sets - behavior-----
+adjustmentSets(full_dag, exposure = "n15", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ damselfish_biomass, structure, turf_cover }
+#{ N_input, exposure }
+#when add in turfn15 -> turf cover: only { exposure }
+
+adjustmentSets(full_dag, exposure = "turf_cover", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ damselfish_biomass, n15, structure }
+#{ N_input, damselfish_biomass, exposure, structure }
+#when add in turfn15 -> turf cover: only { damselfish_biomass, n15, structure }
+
+
+
+adjustmentSets(full_dag, exposure = "size", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag, exposure = "aggression", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ atri_biomass, damselfish_biomass }
+
+adjustmentSets(full_dag, exposure = "time", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+adjustmentSets(full_dag, exposure = "predators", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag, exposure = "structure", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag, exposure = "atri_biomass", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure, turf_cover }
+
+
+
+#check adjustment sets - demographics-----
+adjustmentSets(full_dag, exposure = "n15", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ damselfish_biomass, structure, turf_cover }
+#{ N_input, exposure }
+#when add in turfn15 -> turf cover: only { exposure }
+
+
+adjustmentSets(full_dag, exposure = "turf_cover", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ damselfish_biomass, n15, structure }
+#{ N_input, damselfish_biomass, exposure, structure }
+#when add in turfn15 -> turf cover: only { damselfish_biomass, n15, structure }**
+
+
+
+adjustmentSets(full_dag, exposure = "size", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag, exposure = "predators", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag, exposure = "structure", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag, exposure = "atri_biomass", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure, turf_cover }
+
+
+
+```
+
+
+######----Flip some bidirectional relationships---------
+
+#Full dag from dagitty:
+```{r}
+#same as above, EXCEPT: 
+#now demographics -> behaviour
+
+
+full_dag_1<-
+  dagitty("dag {
+N_input -> n15
+aggression -> atri_behavior
+atri_biomass -> aggression
+atri_biomass -> atri_behavior
+atri_biomass -> atri_dem
+damselfish_biomass -> aggression
+damselfish_biomass -> atri_behavior
+damselfish_biomass -> turf_cover
+atri_dem -> atri_behavior 
+exposure -> N_input
+exposure -> turf_cover
+exposure -> n15
+exposure -> structure
+turf_cover -> atri_biomass
+turf_cover -> atri_behavior
+turf_cover -> atri_dem
+n15 -> turf_cover
+n15 -> atri_biomass
+n15 -> atri_behavior
+n15 -> atri_dem
+predators -> atri_biomass
+predators -> damselfish_biomass
+predators -> atri_behavior
+predators -> atri_dem
+size -> atri_behavior
+size -> atri_dem
+structure -> atri_biomass
+structure -> damselfish_biomass
+structure -> atri_behavior
+structure -> atri_dem
+structure -> turf_cover
+structure -> predators
+time -> atri_behavior
+}")
+
+```
+
+
+
+#check adjustment sets
+```{r}
+
+#check adjustment sets - n15-----
+adjustmentSets(full_dag_1, exposure = "N_input", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_1, exposure = "exposure", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{}
+
+
+
+#check adjustment sets - behavior-----
+adjustmentSets(full_dag_1, exposure = "n15", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_1, exposure = "turf_cover", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+# { damselfish_biomass, n15, structure }
+
+
+
+adjustmentSets(full_dag_1, exposure = "size", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag_1, exposure = "aggression", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ atri_biomass, damselfish_biomass }
+
+adjustmentSets(full_dag_1, exposure = "time", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+adjustmentSets(full_dag_1, exposure = "predators", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag_1, exposure = "structure", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag_1, exposure = "atri_biomass", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure, turf_cover }
+
+
+
+#check adjustment sets - demographics-----
+adjustmentSets(full_dag_1, exposure = "n15", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_1, exposure = "turf_cover", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure }
+#{ damselfish_biomass, n15, structure }
+
+##THIS IS THE ONLY DIFFERENCE FROM OG DAG - THERE IT IS { damselfish_biomass, n15, structure }. BUT STILL CAN USE SAME ADJUSTMENT SET HERE*
+
+
+adjustmentSets(full_dag_1, exposure = "size", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag_1, exposure = "predators", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag_1, exposure = "structure", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag_1, exposure = "atri_biomass", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure, turf_cover }
+
+
+
+
+#but, would need to add in demographic effect on behaviour: 
+adjustmentSets(full_dag_1, exposure = "atri_dem", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ atri_biomass, n15, predators, size, structure, turf_cover }
+
+
+```
+
+
+
+
+####TWO SWITCHES---------------
+
+
+#Full dag from dagitty:
+```{r}
+#same as above, EXCEPT: 
+#now demographics -> behaviour
+# demographics -> biomass
+
+
+full_dag_2<-
+  dagitty("dag {
+N_input -> n15
+aggression -> atri_behavior
+atri_biomass -> aggression
+atri_biomass -> atri_behavior
+atri_dem -> atri_biomass  
+damselfish_biomass -> aggression
+damselfish_biomass -> atri_behavior
+damselfish_biomass -> turf_cover
+atri_dem -> atri_behavior
+exposure -> N_input
+exposure -> turf_cover
+exposure -> n15
+exposure -> structure
+turf_cover -> atri_biomass
+turf_cover -> atri_behavior
+turf_cover -> atri_dem
+n15 -> turf_cover
+n15 -> atri_biomass
+n15 -> atri_behavior
+n15 -> atri_dem
+predators -> atri_biomass
+predators -> damselfish_biomass
+predators -> atri_behavior
+predators -> atri_dem
+size -> atri_behavior
+size -> atri_dem
+structure -> atri_biomass
+structure -> damselfish_biomass
+structure -> atri_behavior
+structure -> atri_dem
+structure -> turf_cover
+structure -> predators
+time -> atri_behavior
+}")
+
+```
+
+
+
+#check adjustment sets
+```{r}
+
+#check adjustment sets - n15-----
+adjustmentSets(full_dag_2, exposure = "N_input", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_2, exposure = "exposure", outcome = "n15",
+               type = "minimal", effect = c("total"))
+#{}
+
+
+
+#check adjustment sets - behavior-----
+adjustmentSets(full_dag_2, exposure = "n15", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_2, exposure = "turf_cover", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+# { damselfish_biomass, n15, structure }
+
+
+
+adjustmentSets(full_dag_2, exposure = "size", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag_2, exposure = "aggression", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ atri_biomass, damselfish_biomass }
+
+
+adjustmentSets(full_dag_2, exposure = "time", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#none needed
+
+adjustmentSets(full_dag_2, exposure = "predators", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag_2, exposure = "structure", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag_2, exposure = "atri_biomass", outcome = "atri_behavior",
+               type = "minimal", effect = c("total"))
+#{ atri_dem, n15, predators, structure, turf_cover }
+###THIS IS DIFFERENT****
+
+
+#check adjustment sets - demographics-----
+adjustmentSets(full_dag_2, exposure = "n15", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+adjustmentSets(full_dag_2, exposure = "turf_cover", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure }
+#{ damselfish_biomass, n15, structure }
+
+##THIS IS THE DIFFERENCE FROM OG DAG - THEREIT IS { damselfish_biomass, n15, structure }. BUT STILL CAN USE SAME ADJUSTMENT SET HERE* SAME AS DAG_1
+
+
+adjustmentSets(full_dag_2, exposure = "size", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#none needed
+
+
+adjustmentSets(full_dag_2, exposure = "predators", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ structure }
+
+
+adjustmentSets(full_dag_2, exposure = "structure", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#{ exposure }
+
+
+
+adjustmentSets(full_dag_2, exposure = "atri_biomass", outcome = "atri_dem",
+               type = "minimal", effect = c("total"))
+#CANT USE THIS ONE - ATRI_DEM NOW AFFECTS BIOMASS, NOT OTHER WAY AROUND****
+
+adjustmentSets(full_dag_2, exposure = "atri_dem", outcome = "atri_biomass",
+               type = "minimal", effect = c("total"))
+#{ n15, predators, structure, turf_cover }
+#but don't care about that, outcomes of interest = behaviour and demographics***
+
+
+
+##so, difference is that now with a. tri biomass effects on behaviour, need to account for: #{ atri_dem, n15, predators, structure, turf_cover } rather than: #{ n15, predators, structure, turf_cover }
+
+```
+
+
+
+
+
+
+#copied from dagitty.net:
+dag {
+bb="0,0,1,1"
+"N input" [pos="0.099,0.103"]
+"aggressive encounters" [pos="0.828,0.592"]
+"atri_biomass/density" [pos="0.571,0.042"]
+"damselfish density/biomass" [pos="0.534,0.608"]
+atri_behavior [pos="0.855,0.396"]
+atri_dem [outcome,pos="0.831,0.199"]
+exposure [pos="0.131,0.273"]
+food_availability [pos="0.282,0.262"]
+food_quality [pos="0.288,0.136"]
+predators [pos="0.341,0.615"]
+size [exposure,pos="0.939,0.240"]
+structure [pos="0.278,0.433"]
+"N input" -> food_availability
+"N input" -> food_quality
+"aggressive encounters" -> atri_behavior
+"atri_biomass/density" -> "aggressive encounters"
+"atri_biomass/density" -> atri_behavior
+"atri_biomass/density" -> atri_dem
+"damselfish density/biomass" -> "aggressive encounters"
+"damselfish density/biomass" -> atri_behavior
+"damselfish density/biomass" -> food_availability
+atri_behavior -> atri_dem
+exposure -> "N input"
+exposure -> food_availability
+exposure -> food_quality
+exposure -> structure
+food_availability -> "atri_biomass/density"
+food_availability -> atri_behavior
+food_availability -> atri_dem
+food_quality -> "atri_biomass/density"
+food_quality -> atri_behavior
+food_quality -> atri_dem
+predators -> "atri_biomass/density"
+predators -> "damselfish density/biomass"
+predators -> atri_behavior
+predators -> atri_dem
+size -> atri_behavior
+size -> atri_dem
+structure -> "atri_biomass/density"
+structure -> "damselfish density/biomass"
+structure -> atri_behavior
+structure -> atri_dem
+structure -> food_availability
+structure -> predators
+}
+
